@@ -1,51 +1,66 @@
-local loader = loadScript and assert(loadScript("/SCRIPTS/TOOLS/BFDash/loader.lua"))() or dofile("src/SCRIPTS/TOOLS/BFDash/loader.lua")
-local include = loader.include
+-- DIAGNOSTIC WRAPPER: everything that can fail at load time (module includes,
+-- constructing the app table) runs inside a pcall. If ANY of it throws, init()
+-- and run() below fall back to drawing the actual error message on screen
+-- instead of the radio silently doing nothing. Remove this wrapper once the
+-- script is confirmed loading cleanly on real hardware.
+local msp, mspMsgs, stateMod, safety
+local pidsPage, ratesPage, filtersPage, vtxPage
+local CRSF_FRAMETYPE_MSP_RESP, CRSF_FRAMETYPE_FLIGHT_MODE
+local FLIGHT_MODE_STALE_MS, REQUEST_TIMEOUT_MS
+local SUPPORTED_MAJOR, SUPPORTED_MINOR
+local pages, pageNames, pageKeys, pageByKey, SET_CMD_BY_KEY
+local app
 
-local msp = include("transport/msp.lua")
-local mspMsgs = include("mspMsgs.lua")
-local stateMod = include("state.lua")
-local safety = include("safety.lua")
+local setupOk, setupErr = pcall(function()
+    local loader = loadScript and assert(loadScript("/SCRIPTS/TOOLS/BFDash/loader.lua"))() or dofile("src/SCRIPTS/TOOLS/BFDash/loader.lua")
+    local include = loader.include
 
-local pidsPage = include("pages/pids.lua")
-local ratesPage = include("pages/rates.lua")
-local filtersPage = include("pages/filters.lua")
-local vtxPage = include("pages/vtx.lua")
+    msp = include("transport/msp.lua")
+    mspMsgs = include("mspMsgs.lua")
+    stateMod = include("state.lua")
+    safety = include("safety.lua")
 
-local CRSF_FRAMETYPE_MSP_RESP = 0x7B
-local CRSF_FRAMETYPE_FLIGHT_MODE = 0x21
-local FLIGHT_MODE_STALE_MS = 3000
-local REQUEST_TIMEOUT_MS = 800
+    pidsPage = include("pages/pids.lua")
+    ratesPage = include("pages/rates.lua")
+    filtersPage = include("pages/filters.lua")
+    vtxPage = include("pages/vtx.lua")
 
--- Every byte offset in this project is pinned to Betaflight 4.5.x firmware
--- source. Writing those offsets to a different minor version could land in the
--- wrong fields, so the connection check gates on the FC version too.
-local SUPPORTED_MAJOR, SUPPORTED_MINOR = 4, 5
+    CRSF_FRAMETYPE_MSP_RESP = 0x7B
+    CRSF_FRAMETYPE_FLIGHT_MODE = 0x21
+    FLIGHT_MODE_STALE_MS = 3000
+    REQUEST_TIMEOUT_MS = 800
 
-local pages = { pidsPage, ratesPage, filtersPage, vtxPage }
-local pageNames = { "PIDs", "Rates", "Filters", "VTX" }
-local pageKeys = { "pids", "rates", "filters", "vtx" }
-local pageByKey = { pids = pidsPage, rates = ratesPage, filters = filtersPage, vtx = vtxPage }
+    -- Every byte offset in this project is pinned to Betaflight 4.5.x firmware
+    -- source. Writing those offsets to a different minor version could land in
+    -- the wrong fields, so the connection check gates on the FC version too.
+    SUPPORTED_MAJOR, SUPPORTED_MINOR = 4, 5
 
--- The SET command each page's beginSave() issues. Used to validate that a
--- response actually belongs to the request we just made before treating it as
--- a successful write (see the msp session's shared-session hazard).
-local SET_CMD_BY_KEY = {
-    pids = mspMsgs.CMD.SET_SIMPLIFIED_TUNING,
-    rates = mspMsgs.CMD.SET_RC_TUNING,
-    filters = mspMsgs.CMD.SET_FILTER_CONFIG,
-    vtx = mspMsgs.CMD.SET_VTX_CONFIG,
-}
+    pages = { pidsPage, ratesPage, filtersPage, vtxPage }
+    pageNames = { "PIDs", "Rates", "Filters", "VTX" }
+    pageKeys = { "pids", "rates", "filters", "vtx" }
+    pageByKey = { pids = pidsPage, rates = ratesPage, filters = filtersPage, vtx = vtxPage }
 
-local app = {
-    activeTab = 1,
-    -- connecting | connected | unsupported | unsupported_version | disconnected
-    connection = "connecting",
-    session = msp.new(REQUEST_TIMEOUT_MS),
-    arm = safety.new(),
-    state = stateMod.new(),
-    lastFlightModeMs = 0,
-    profileSlot = 1,
-}
+    -- The SET command each page's beginSave() issues. Used to validate that a
+    -- response actually belongs to the request we just made before treating it
+    -- as a successful write (see the msp session's shared-session hazard).
+    SET_CMD_BY_KEY = {
+        pids = mspMsgs.CMD.SET_SIMPLIFIED_TUNING,
+        rates = mspMsgs.CMD.SET_RC_TUNING,
+        filters = mspMsgs.CMD.SET_FILTER_CONFIG,
+        vtx = mspMsgs.CMD.SET_VTX_CONFIG,
+    }
+
+    app = {
+        activeTab = 1,
+        -- connecting | connected | unsupported | unsupported_version | disconnected
+        connection = "connecting",
+        session = msp.new(REQUEST_TIMEOUT_MS),
+        arm = safety.new(),
+        state = stateMod.new(),
+        lastFlightModeMs = 0,
+        profileSlot = 1,
+    }
+end)
 
 --------------------------------------------------------------------------------
 -- Layout
@@ -145,6 +160,9 @@ local function pumpConnection(nowMs)
 end
 
 function init()
+    if not setupOk then
+        return
+    end
     checkConnection()
 end
 
@@ -474,6 +492,13 @@ local function connectionMessage()
 end
 
 function run(event, touchState)
+    if not setupOk then
+        lcd.clear()
+        lcd.drawText(5, 5, "BFDash failed to load:", MIDSIZE)
+        lcd.drawText(5, 30, tostring(setupErr))
+        return
+    end
+
     local nowMs = getTime() * 10
     pumpTelemetry(nowMs)
 
