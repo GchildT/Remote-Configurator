@@ -582,13 +582,14 @@ local function runBody(event, touchState)
     if armed then
         lcd.drawFilledRectangle(0, 0, LCD_W, 20, COLOR_RED)
         lcd.drawText(10, 4, "ARMED -- read only", COLOR_WHITE)
-        -- DIAGNOSTIC: shows whether/what CRSF FLIGHT_MODE frames are actually
-        -- arriving, to debug the arm-lock fail-safe showing armed when the
-        -- craft is genuinely disarmed. Remove once confirmed working.
-        local stale, fmArmed, lastRawText, frameCount = app.arm:debugInfo()
-        local dbg = "FM stale=" .. tostring(stale) .. " armed=" .. tostring(fmArmed)
-            .. " n=" .. tostring(frameCount) .. " last='" .. tostring(lastRawText) .. "'"
-        lcd.drawText(180, 4, dbg, COLOR_WHITE)
+        -- DIAGNOSTIC: shows the exact flight-mode text this FC is sending, to
+        -- debug the arm-lock fail-safe showing armed when the craft is
+        -- genuinely disarmed. Shortened to just the raw text (dropping
+        -- stale/armed/n, already confirmed working) since the combined
+        -- string was running off the right edge of the screen before the
+        -- actual value was visible. Remove once confirmed working.
+        local _, _, lastRawText = app.arm:debugInfo()
+        lcd.drawText(150, 4, "FM='" .. tostring(lastRawText) .. "'", COLOR_WHITE)
     end
 
     -- Touch dispatch, highest priority first. Each handler claims the tap if it
