@@ -1,5 +1,9 @@
-local mspChunk = dofile("src/SCRIPTS/TOOLS/BFDash/transport/mspChunk.lua")
+local mspChunk = loadScript and assert(loadScript("/SCRIPTS/TOOLS/BFDash/transport/mspChunk.lua"))() or dofile("src/SCRIPTS/TOOLS/BFDash/transport/mspChunk.lua")
 
+-- 0x7A (CRSF_FRAMETYPE_MSP_REQ) is used for BOTH reads and writes. Betaflight's
+-- MSP-over-telemetry handler replies only to 0x7A; 0x7C (MSP_WRITE) is a
+-- fire-and-forget frame type that produces no response, and this session (and
+-- the save flow built on it) depends on getting a reply to confirm the write.
 local CRSF_FRAMETYPE_MSP_REQ = 0x7A
 
 local M = {}
@@ -71,8 +75,26 @@ function Session:feed(data)
     end
 end
 
+-- Return the session to "idle" and drop any stored result. Callers use this to
+-- discard a terminal state they are NOT consuming via result() -- notably the
+-- "timeout"/"error" branches, which would otherwise leave the session stuck in
+-- that terminal state forever (nothing else ever clears it).
+function Session:reset()
+    self.outgoing = nil
+    self.assembler = nil
+    self.startedAtMs = nil
+    self.state = "idle"
+    self.resultCmd, self.resultPayload, self.resultIsError = nil, nil, nil
+end
+
+-- Consuming accessor: returns the completed result AND returns the session to
+-- "idle" so the next caller's poll() sees a free session and issues its own
+-- request(). Without this reset, a completed session stays "done" forever and
+-- every later caller takes its decode branch on the previous caller's payload.
 function Session:result()
-    return self.resultCmd, self.resultPayload, self.resultIsError
+    local cmd, payload, isError = self.resultCmd, self.resultPayload, self.resultIsError
+    self:reset()
+    return cmd, payload, isError
 end
 
 function Session:isPending()

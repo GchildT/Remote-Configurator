@@ -1,4 +1,4 @@
-local bytes = dofile("src/SCRIPTS/TOOLS/BFDash/bytes.lua")
+local bytes = loadScript and assert(loadScript("/SCRIPTS/TOOLS/BFDash/bytes.lua"))() or dofile("src/SCRIPTS/TOOLS/BFDash/bytes.lua")
 
 local M = {}
 

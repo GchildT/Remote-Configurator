@@ -14,13 +14,16 @@ local SLIDERS = {
     { key = "pitchPiGain", label = "Pitch PI Gain" },
 }
 local SLIDER_MIN, SLIDER_MAX = 0, 250
-local ROW_HEIGHT = 26
-local ROW_TOP = 50
+-- Layout: page content lives strictly between the chrome above it (tab bar +
+-- profile row, which end at y=64) and the footer below it (starts at y=232 on a
+-- 272px-tall screen). 8 rows * 20px = 160px, so rows span y=66..226 -- no
+-- geometric overlap with either. See main.lua's layout constants.
+local ROW_HEIGHT = 20
+local ROW_TOP = 66
+local SLIDER_H = 18
 local SLIDER_X, SLIDER_W = 140, 300
 
-local phase = "idle" -- idle | loading | ready | saving
-local pendingRawBuffer = nil
-local selectedRow = nil
+local phase = "idle" -- idle | loading | ready
 
 local function decodeIntoState(state, rawBuffer)
     local values = { rawBuffer = rawBuffer }
@@ -50,7 +53,6 @@ local function beginSave(session, state)
     for _, s in ipairs(SLIDERS) do
         buf = mspBuffer.writeField(buf, mspMsgs.SIMPLIFIED_TUNING_FIELDS[s.key], values[s.key])
     end
-    pendingRawBuffer = buf
     session:request(mspMsgs.CMD.SET_SIMPLIFIED_TUNING, buf)
 end
 M.beginSave = beginSave
@@ -60,17 +62,26 @@ function M.event(event, touchState, state, session, nowMs, armed)
         local status = session:poll(nowMs)
         if status == "done" then
             local cmd, payload = session:result()
-            decodeIntoState(state, payload)
-            phase = "ready"
+            -- The msp session is shared with main.lua's connection check and
+            -- save/profile flows. Only decode a reply that is actually the
+            -- answer to OUR request -- otherwise we'd decode e.g. a 4-byte
+            -- "BTFL" FC_VARIANT string as a 53-byte tuning buffer.
+            if cmd == mspMsgs.CMD.SIMPLIFIED_TUNING then
+                decodeIntoState(state, payload)
+                phase = "ready"
+            else
+                phase = "idle" -- not ours; retry cleanly on the next update()
+            end
         elseif status == "idle" then
             beginLoad(session)
         elseif status == "timeout" or status == "error" then
+            session:reset() -- release the terminal state so the retry can request again
             phase = "idle" -- caller will retry on next update()
         end
     end
 
     if phase ~= "ready" then
-        lcd.drawText(10, 60, "Loading PID sliders...")
+        lcd.drawText(10, ROW_TOP, "Loading PID sliders...")
         return
     end
 
@@ -80,13 +91,13 @@ function M.event(event, touchState, state, session, nowMs, armed)
         lcd.drawText(10, y, s.label)
         local value = values[s.key]
         local pct = (value - SLIDER_MIN) / (SLIDER_MAX - SLIDER_MIN)
-        lcd.drawRectangle(SLIDER_X, y, SLIDER_W, 18)
-        lcd.drawFilledRectangle(SLIDER_X, y, math.floor(SLIDER_W * pct), 18, armed and GREY or BLUE)
+        lcd.drawRectangle(SLIDER_X, y, SLIDER_W, SLIDER_H)
+        lcd.drawFilledRectangle(SLIDER_X, y, math.floor(SLIDER_W * pct), SLIDER_H, armed and GREY or BLUE)
         lcd.drawText(SLIDER_X + SLIDER_W + 10, y, tostring(value))
 
         if not armed and touchState and touchState.tap then
             local tx, ty = touchState.x, touchState.y
-            if tx >= SLIDER_X and tx <= SLIDER_X + SLIDER_W and ty >= y and ty <= y + 18 then
+            if tx >= SLIDER_X and tx <= SLIDER_X + SLIDER_W and ty >= y and ty < y + SLIDER_H then
                 local newPct = (tx - SLIDER_X) / SLIDER_W
                 local newValue = math.floor(SLIDER_MIN + newPct * (SLIDER_MAX - SLIDER_MIN))
                 state:setField("pids", s.key, newValue)

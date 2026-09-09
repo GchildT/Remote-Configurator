@@ -9,8 +9,10 @@ local ROWS = {
     { key = "dtermLpf1Hz", label = "D-term LPF1 (Hz)" },
     { key = "dtermLpf2Hz", label = "D-term LPF2 (Hz)" },
 }
+-- Layout: content starts at y=66, below the tab bar + profile row (which end at
+-- y=64). 4 rows * 26px = 104px span y=66..170, well clear of the footer at 232.
 local ROW_HEIGHT = 26
-local ROW_TOP = 60
+local ROW_TOP = 66
 local VALUE_X = 220
 
 local phase = "idle"
@@ -48,17 +50,23 @@ function M.event(event, touchState, state, session, nowMs, armed)
         local status = session:poll(nowMs)
         if status == "done" then
             local cmd, payload = session:result()
-            decodeIntoState(state, payload)
-            phase = "ready"
+            -- Shared session: only decode a reply to OUR request (see pids.lua).
+            if cmd == mspMsgs.CMD.FILTER_CONFIG then
+                decodeIntoState(state, payload)
+                phase = "ready"
+            else
+                phase = "idle"
+            end
         elseif status == "idle" then
             session:request(mspMsgs.CMD.FILTER_CONFIG, "")
         elseif status == "timeout" or status == "error" then
+            session:reset()
             phase = "idle"
         end
     end
 
     if phase ~= "ready" then
-        lcd.drawText(10, 60, "Loading filters...")
+        lcd.drawText(10, ROW_TOP, "Loading filters...")
         return
     end
 
@@ -70,7 +78,7 @@ function M.event(event, touchState, state, session, nowMs, armed)
 
         if not armed and touchState and touchState.tap then
             local tx, ty = touchState.x, touchState.y
-            if ty >= y and ty <= y + ROW_HEIGHT then
+            if ty >= y and ty < y + ROW_HEIGHT then
                 if tx >= VALUE_X + 60 and tx <= VALUE_X + 85 then
                     state:setField("filters", r.key, math.max(0, values[r.key] - 5))
                 elseif tx >= VALUE_X + 90 and tx <= VALUE_X + 115 then

@@ -5,6 +5,14 @@ local M = {}
 local BAND_NAMES = { "A", "B", "E", "F", "R" }
 local POWER_MIN, POWER_MAX = 1, 5
 
+-- Layout: content starts at y=66, below the tab bar + profile row (which end at
+-- y=64). Three 20px rows at 70/100/130 stay clear of the footer at 232.
+local CONTENT_TOP = 66
+local ROW_H = 20
+local BAND_Y, CHANNEL_Y, POWER_Y = 70, 100, 130
+local DEC_X, DEC_W = 150, 20
+local INC_X, INC_W = 175, 20
+
 local phase = "idle"
 
 function M.create()
@@ -29,49 +37,57 @@ function M.event(event, touchState, state, session, nowMs, armed)
         local status = session:poll(nowMs)
         if status == "done" then
             local cmd, payload = session:result()
-            local decoded = mspMsgs.decodeVtxConfig(payload)
-            -- lowPowerDisarm and pitModeFreq aren't decoded by decodeVtxConfig
-            -- (not user-editable on this page) but are required, unchanged,
-            -- by encodeVtxConfigSet's round trip -- read them directly here.
-            decoded.lowPowerDisarm = string.byte(payload, 9) or 0
-            decoded.pitModeFreq = (string.byte(payload, 10) or 0) + (string.byte(payload, 11) or 0) * 256
-            state:load("vtx", decoded)
-            phase = "ready"
+            -- Shared session: only decode a reply to OUR request (see pids.lua).
+            if cmd == mspMsgs.CMD.VTX_CONFIG then
+                local decoded = mspMsgs.decodeVtxConfig(payload)
+                -- lowPowerDisarm and pitModeFreq aren't decoded by decodeVtxConfig
+                -- (not user-editable on this page) but are required, unchanged,
+                -- by encodeVtxConfigSet's round trip -- read them directly here.
+                decoded.lowPowerDisarm = string.byte(payload, 9) or 0
+                decoded.pitModeFreq = (string.byte(payload, 10) or 0) + (string.byte(payload, 11) or 0) * 256
+                state:load("vtx", decoded)
+                phase = "ready"
+            else
+                phase = "idle"
+            end
         elseif status == "idle" then
             session:request(mspMsgs.CMD.VTX_CONFIG, "")
         elseif status == "timeout" or status == "error" then
+            session:reset()
             phase = "idle"
         end
     end
 
     if phase ~= "ready" then
-        lcd.drawText(10, 60, "Loading VTX config...")
+        lcd.drawText(10, CONTENT_TOP, "Loading VTX config...")
         return
     end
 
     local values = state:get("vtx")
-    lcd.drawText(10, 60, "Band: " .. (BAND_NAMES[values.band] or tostring(values.band)))
-    lcd.drawText(10, 90, "Channel: " .. tostring(values.channel))
-    lcd.drawText(10, 120, "Power: " .. tostring(values.power))
+    lcd.drawText(10, BAND_Y, "Band: " .. (BAND_NAMES[values.band] or tostring(values.band)))
+    lcd.drawText(10, CHANNEL_Y, "Channel: " .. tostring(values.channel))
+    lcd.drawText(10, POWER_Y, "Power: " .. tostring(values.power))
 
     if not armed and touchState and touchState.tap then
         local tx, ty = touchState.x, touchState.y
-        if ty >= 60 and ty <= 80 then
-            if tx >= 150 and tx <= 170 then
+        local dec = tx >= DEC_X and tx < DEC_X + DEC_W
+        local inc = tx >= INC_X and tx < INC_X + INC_W
+        if ty >= BAND_Y and ty < BAND_Y + ROW_H then
+            if dec then
                 state:setField("vtx", "band", math.max(1, values.band - 1))
-            elseif tx >= 175 and tx <= 195 then
+            elseif inc then
                 state:setField("vtx", "band", math.min(#BAND_NAMES, values.band + 1))
             end
-        elseif ty >= 90 and ty <= 110 then
-            if tx >= 150 and tx <= 170 then
+        elseif ty >= CHANNEL_Y and ty < CHANNEL_Y + ROW_H then
+            if dec then
                 state:setField("vtx", "channel", math.max(1, values.channel - 1))
-            elseif tx >= 175 and tx <= 195 then
+            elseif inc then
                 state:setField("vtx", "channel", math.min(8, values.channel + 1))
             end
-        elseif ty >= 120 and ty <= 140 then
-            if tx >= 150 and tx <= 170 then
+        elseif ty >= POWER_Y and ty < POWER_Y + ROW_H then
+            if dec then
                 state:setField("vtx", "power", math.max(POWER_MIN, values.power - 1))
-            elseif tx >= 175 and tx <= 195 then
+            elseif inc then
                 state:setField("vtx", "power", math.min(POWER_MAX, values.power + 1))
             end
         end

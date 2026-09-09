@@ -16,8 +16,17 @@ local ROWS = {
     { key = "superRatePitch", label = "Pitch Super Rate" },
     { key = "superRateYaw", label = "Yaw Super Rate" },
 }
-local ROW_HEIGHT = 20
-local ROW_TOP = 60
+-- Layout: page content starts at y=66 (below the tab bar + profile row, which
+-- end at y=64) and must finish above the footer at y=232. The rate-type toggle
+-- gets its own 18px row at the top of the content area (previously it sat at
+-- ROW_TOP-24, which put it inside the profile row AND the tab-bar strip), then
+-- 9 value rows * 16px = 144px span y=86..230.
+local CONTENT_TOP = 66
+local TYPE_Y = CONTENT_TOP
+local TYPE_H = 18
+local TYPE_X, TYPE_W = 150, 100
+local ROW_HEIGHT = 16
+local ROW_TOP = 86
 local VALUE_X = 220
 
 local phase = "idle"
@@ -57,26 +66,32 @@ function M.event(event, touchState, state, session, nowMs, armed)
         local status = session:poll(nowMs)
         if status == "done" then
             local cmd, payload = session:result()
-            decodeIntoState(state, payload)
-            phase = "ready"
+            -- Shared session: only decode a reply to OUR request (see pids.lua).
+            if cmd == mspMsgs.CMD.RC_TUNING then
+                decodeIntoState(state, payload)
+                phase = "ready"
+            else
+                phase = "idle"
+            end
         elseif status == "idle" then
             session:request(mspMsgs.CMD.RC_TUNING, "")
         elseif status == "timeout" or status == "error" then
+            session:reset()
             phase = "idle"
         end
     end
 
     if phase ~= "ready" then
-        lcd.drawText(10, 60, "Loading rates...")
+        lcd.drawText(10, CONTENT_TOP, "Loading rates...")
         return
     end
 
     local values = state:get("rates")
-    lcd.drawText(10, ROW_TOP - 20, "Rate type: " .. (RATE_TYPE_NAMES[values.ratesType] or "?"))
+    lcd.drawText(10, TYPE_Y, "Rate type: " .. (RATE_TYPE_NAMES[values.ratesType] or "?"))
 
     if not armed and touchState and touchState.tap then
         local tx, ty = touchState.x, touchState.y
-        if ty >= ROW_TOP - 24 and ty <= ROW_TOP - 4 and tx >= 150 and tx <= 250 then
+        if ty >= TYPE_Y and ty < TYPE_Y + TYPE_H and tx >= TYPE_X and tx < TYPE_X + TYPE_W then
             state:setField("rates", "ratesType", (values.ratesType + 1) % 4)
         end
     end
@@ -88,7 +103,7 @@ function M.event(event, touchState, state, session, nowMs, armed)
 
         if not armed and touchState and touchState.tap then
             local tx, ty = touchState.x, touchState.y
-            if ty >= y and ty <= y + ROW_HEIGHT then
+            if ty >= y and ty < y + ROW_HEIGHT then
                 if tx >= VALUE_X + 40 and tx <= VALUE_X + 60 then
                     state:setField("rates", r.key, math.max(0, values[r.key] - 1))
                 elseif tx >= VALUE_X + 65 and tx <= VALUE_X + 85 then
