@@ -79,11 +79,14 @@ end
 
 local RATEPROFILE_MASK = 0x80
 
+-- EdgeTX embeds Lua 5.2, which has no native bitwise operators (added in
+-- 5.3) -- these are written as portable arithmetic instead. RATEPROFILE_MASK
+-- (bit 7) and the low-7-bits index are disjoint, so OR-ing them is addition.
 function M.encodeSelectSetting(profileType, index)
     if profileType == "rate" then
-        return string.char(RATEPROFILE_MASK | (index & 0x7f))
+        return string.char(RATEPROFILE_MASK + (index % 128))
     else
-        return string.char(index & 0x7f)
+        return string.char(index % 128)
     end
 end
 
@@ -108,11 +111,11 @@ end
 function M.encodeVtxConfigSet(current)
     local legacy = (current.band - 1) * 8 + (current.channel - 1)
     local out = {}
-    out[#out + 1] = string.char(legacy % 256, legacy // 256)
+    out[#out + 1] = string.char(legacy % 256, math.floor(legacy / 256))
     out[#out + 1] = string.char(current.power)
     out[#out + 1] = string.char(current.pitmode)
     out[#out + 1] = string.char(current.lowPowerDisarm)
-    out[#out + 1] = string.char(current.pitModeFreq % 256, current.pitModeFreq // 256)
+    out[#out + 1] = string.char(current.pitModeFreq % 256, math.floor(current.pitModeFreq / 256))
     out[#out + 1] = string.char(current.band, current.channel)
     out[#out + 1] = string.char(0, 0) -- standalone freq: 0 = derive from band/channel
     return table.concat(out)

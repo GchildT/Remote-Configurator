@@ -454,7 +454,7 @@ end
 
 local function drawTabBar(armed)
     for i, name in ipairs(pageNames) do
-        local w = LCD_W // #pageNames
+        local w = math.floor(LCD_W / #pageNames)
         local x = (i - 1) * w
         if i == app.activeTab then
             lcd.drawFilledRectangle(x, TAB_Y, w, TAB_H, BLUE)
@@ -467,7 +467,7 @@ local function handleTabTouch(touchState, armed)
     if armed then
         return
     end
-    local w = LCD_W // #pageNames
+    local w = math.floor(LCD_W / #pageNames)
     for i = 1, #pageNames do
         local x = (i - 1) * w
         if tapInRect(touchState, x, TAB_Y, w, TAB_H) then
