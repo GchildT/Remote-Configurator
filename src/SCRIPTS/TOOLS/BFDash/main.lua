@@ -569,12 +569,19 @@ local function runBody(event, touchState)
     drawFooter(armed)
 end
 
+-- IMPORTANT: EdgeTX's standalone-script host (radio/src/gui/colorlcd/
+-- standalone_lua.cpp: StandaloneLuaWindow::checkEvents) calls run() expecting
+-- EXACTLY ONE numeric return value: 0 means "keep running, please repaint the
+-- screen", non-zero means "close this app". If run() returns nothing (nil),
+-- the host never calls invalidate() and the drawn frame is silently never
+-- shown -- this was the root cause of the screen appearing solid black with
+-- no error. Every path below must return 0.
 function run(event, touchState)
     if not setupOk then
         lcd.clear(COLOR_BLACK)
         lcd.drawText(5, 5, "BFDash failed to load:", COLOR_WHITE)
         lcd.drawText(5, 30, tostring(setupErr), COLOR_WHITE)
-        return
+        return 0
     end
 
     local ok, runErr = pcall(runBody, event, touchState)
@@ -583,6 +590,7 @@ function run(event, touchState)
         lcd.drawText(5, 5, "BFDash crashed in run():", COLOR_WHITE)
         lcd.drawText(5, 30, tostring(runErr), COLOR_WHITE)
     end
+    return 0
 end
 
 -- EdgeTX's script loader requires the top-level chunk to return a table with
