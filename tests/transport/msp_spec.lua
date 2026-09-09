@@ -27,6 +27,29 @@ testkit.describe("msp session", function()
         testkit.assertEquals(pushLog[1].command, 0x7A, "MSP_REQ frame type")
     end)
 
+    testkit.it("pushes the chunk as a 1-indexed table of byte values, not a string", function()
+        -- Confirmed against EdgeTX firmware source: crossfireTelemetryPush's
+        -- second argument must be a Lua table (luaL_checktype LUA_TTABLE),
+        -- not a packed string.
+        local msp = freshMsp()
+        local session = msp.new(1000)
+        session:request(1, "")
+        session:poll(0)
+        local data = pushLog[1].data
+        testkit.assertEquals(type(data), "table", "data is a table, not a string")
+        -- API_VERSION request chunk: status(0x50), flags(0), cmdLo(1), cmdHi(0),
+        -- sizeLo(0), sizeHi(0) -- 6 header bytes, no payload for an empty request.
+        testkit.assertEquals(#data, 6, "6-byte header, empty payload")
+        testkit.assertEquals(data[1], 0x50, "byte 1: status")
+        testkit.assertEquals(data[3], 1, "byte 3: cmd lo")
+    end)
+
+    testkit.it("round-trips a byte string through tableToString correctly", function()
+        local msp = freshMsp()
+        local t = { 0x41, 0x42, 0x43, 0x00, 0xFF }
+        testkit.assertEquals(msp.tableToString(t), "ABC" .. string.char(0) .. string.char(0xFF), "table converted to string")
+    end)
+
     testkit.it("assembles a single-chunk response fed via session:feed and reports done", function()
         local msp = freshMsp()
         local session = msp.new(1000)

@@ -91,16 +91,23 @@ local BTN_CANCEL_X, BTN_CANCEL_W = 110, 100
 -- session via session:feed(), and FLIGHT_MODE frames to the arm tracker.
 -- msp.lua deliberately never calls crossfireTelemetryPop() itself (see
 -- Task 3's note) so this is the only consumer of the telemetry queue.
+--
+-- crossfireTelemetryPop() returns TWO values -- command (number), packet
+-- (table of byte values) -- not a single table with .command/.data fields,
+-- and returns nothing at all (not nil) when the queue is empty. Confirmed
+-- against EdgeTX firmware source (radio/src/lua/api_general.cpp). The rest
+-- of this codebase works in byte strings, so the packet table is converted
+-- via msp.tableToString right here at the boundary.
 local function pumpTelemetry(nowMs)
     while true do
-        local frame = crossfireTelemetryPop()
-        if frame == nil then
+        local command, packet = crossfireTelemetryPop()
+        if command == nil then
             break
         end
-        if frame.command == CRSF_FRAMETYPE_MSP_RESP then
-            app.session:feed(frame.data)
-        elseif frame.command == CRSF_FRAMETYPE_FLIGHT_MODE then
-            app.arm:feedFlightModeFrame(frame.data)
+        if command == CRSF_FRAMETYPE_MSP_RESP then
+            app.session:feed(msp.tableToString(packet))
+        elseif command == CRSF_FRAMETYPE_FLIGHT_MODE then
+            app.arm:feedFlightModeFrame(msp.tableToString(packet))
             app.lastFlightModeMs = nowMs
         end
     end

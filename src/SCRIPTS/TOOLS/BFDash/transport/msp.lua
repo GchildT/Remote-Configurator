@@ -6,7 +6,32 @@ local mspChunk = loadScript and assert(loadScript("/SCRIPTS/TOOLS/BFDash/transpo
 -- the save flow built on it) depends on getting a reply to confirm the write.
 local CRSF_FRAMETYPE_MSP_REQ = 0x7A
 
+-- Confirmed against EdgeTX firmware source (radio/src/lua/api_general.cpp,
+-- luaCrossfireTelemetryPush/Pop): crossfireTelemetryPush's second argument
+-- must be a Lua TABLE of byte values (1-indexed), not a packed string --
+-- EdgeTX builds the actual CRSF frame (address/length/CRC) around it. The
+-- rest of this codebase (mspChunk.lua's chunk framing, the MSP status byte,
+-- etc.) works entirely in byte strings, which is the right internal
+-- representation -- these two helpers are the sole adapter at the boundary.
+local function stringToTable(s)
+    local t = {}
+    for i = 1, #s do
+        t[i] = string.byte(s, i)
+    end
+    return t
+end
+
+local function tableToString(t)
+    local s = ""
+    for i = 1, #t do
+        s = s .. string.char(t[i])
+    end
+    return s
+end
+
 local M = {}
+M.tableToString = tableToString
+
 local Session = {}
 Session.__index = Session
 
@@ -47,7 +72,7 @@ function Session:poll(nowMs)
 
     if #self.outgoing > 0 then
         local chunk = table.remove(self.outgoing, 1)
-        crossfireTelemetryPush(CRSF_FRAMETYPE_MSP_REQ, chunk)
+        crossfireTelemetryPush(CRSF_FRAMETYPE_MSP_REQ, stringToTable(chunk))
     end
 
     if (nowMs - self.startedAtMs) > self.timeoutMs then
