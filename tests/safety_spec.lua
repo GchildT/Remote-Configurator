@@ -43,6 +43,32 @@ testkit.describe("safety arm tracker", function()
         testkit.assertEquals(t:isArmed(), false, "failsafe with star = disarmed")
     end)
 
+    -- Betaflight 2026.6.1 src/main/telemetry/crsf.c: crsfFrameFlightMode() writes
+    -- '!' (arming disabled) or '?' (GPS rescue unavailable) instead of '*' in
+    -- some disarmed states -- confirmed on real hardware (mode text "AIR!").
+    testkit.it("reports disarmed when the flight mode string ends with '!' (arming disabled)", function()
+        local t = safety.new()
+        t:feedFlightModeFrame("AIR!\0")
+        testkit.assertEquals(t:isArmed(), false, "trailing ! means disarmed (arming disabled)")
+    end)
+
+    testkit.it("reports disarmed when the flight mode string ends with '?' (GPS rescue unavailable)", function()
+        local t = safety.new()
+        t:feedFlightModeFrame("AIR?\0")
+        testkit.assertEquals(t:isArmed(), false, "trailing ? means disarmed (GPS rescue unavailable)")
+    end)
+
+    -- During failsafe, Betaflight sends the fixed text "!FS!" with NO suffix
+    -- logic applied regardless of arm state, so it cannot be used to infer
+    -- arm state via suffix. Must fail safe (treated as armed/locked) rather
+    -- than be misread as disarmed just because it happens to end in '!'.
+    testkit.it("treats the exact failsafe mode text '!FS!' as armed (ambiguous, fail-safe default)", function()
+        local t = safety.new()
+        t:feedFlightModeFrame("ACRO\0") -- armed baseline
+        t:feedFlightModeFrame("!FS!\0")
+        testkit.assertEquals(t:isArmed(), true, "'!FS!' alone is ambiguous -> defaults to armed")
+    end)
+
     testkit.it("markStale forces armed regardless of prior frame (fail-safe)", function()
         local t = safety.new()
         t:feedFlightModeFrame("ACRO\0") -- arm first, to prove markStale overrides it

@@ -6,8 +6,13 @@ function M.new()
     return setmetatable({ armed = true, stale = true, lastRawText = nil, frameCount = 0 }, Tracker)
 end
 
--- Verified from Betaflight 4.5.5 src/main/telemetry/crsf.c: crsfFrameFlightMode()
--- writes a trailing '*' ONLY when NOT armed. Absence of '*' = armed.
+-- Verified from Betaflight src/main/telemetry/crsf.c: crsfFrameFlightMode().
+-- 4.5.5: writes a trailing '*' ONLY when NOT armed. Absence of '*' = armed.
+-- 2026.6.1: writes a trailing '*' (ready to arm), '!' (arming disabled), or
+-- '?' (GPS rescue unavailable) ONLY when NOT armed AND NOT in failsafe.
+-- Absence of any suffix = armed. During failsafe, the mode text is the fixed
+-- string "!FS!" and NO suffix logic runs at all -- that text is therefore
+-- ambiguous about arm state and is special-cased below to fail safe (locked).
 function Tracker:feedFlightModeFrame(data)
     if type(data) ~= "string" or data == "" then
         -- Malformed/missing frame: do not update armed state, and do not
@@ -22,8 +27,15 @@ function Tracker:feedFlightModeFrame(data)
     if not ok or type(text) ~= "string" then
         return
     end
-    local endsWithStar = string.sub(text, -1) == "*"
-    self.armed = not endsWithStar
+    if text == "!FS!" then
+        -- Failsafe mode name, no suffix logic applied by the FC -- arm state
+        -- is undeterminable from this text alone. Fail safe: treat as armed.
+        self.armed = true
+    else
+        local lastChar = string.sub(text, -1)
+        local hasDisarmSuffix = lastChar == "*" or lastChar == "!" or lastChar == "?"
+        self.armed = not hasDisarmSuffix
+    end
     self.stale = false
     self.lastRawText = text
     self.frameCount = self.frameCount + 1
