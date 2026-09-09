@@ -1,6 +1,9 @@
 local mspMsgs = loadScript and assert(loadScript("/SCRIPTS/TOOLS/BFDash/mspMsgs.lua"))() or dofile("src/SCRIPTS/TOOLS/BFDash/mspMsgs.lua")
 local mspBuffer = loadScript and assert(loadScript("/SCRIPTS/TOOLS/BFDash/transport/mspBuffer.lua"))() or dofile("src/SCRIPTS/TOOLS/BFDash/transport/mspBuffer.lua")
 
+-- Explicit RGB colors rather than named constants -- see main.lua's note.
+local COLOR_WHITE = lcd.RGB(255, 255, 255)
+
 local M = {}
 
 local ROWS = {
@@ -66,15 +69,15 @@ function M.event(event, touchState, state, session, nowMs, armed)
     end
 
     if phase ~= "ready" then
-        lcd.drawText(10, ROW_TOP, "Loading filters...")
+        lcd.drawText(10, ROW_TOP, "Loading filters...", COLOR_WHITE)
         return
     end
 
     local values = state:get("filters")
     for i, r in ipairs(ROWS) do
         local y = ROW_TOP + (i - 1) * ROW_HEIGHT
-        lcd.drawText(10, y, r.label)
-        lcd.drawText(VALUE_X, y, tostring(values[r.key]))
+        lcd.drawText(10, y, r.label, COLOR_WHITE)
+        lcd.drawText(VALUE_X, y, tostring(values[r.key]), COLOR_WHITE)
 
         if not armed and touchState and touchState.tap then
             local tx, ty = touchState.x, touchState.y

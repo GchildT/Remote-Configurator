@@ -1,5 +1,8 @@
 local mspMsgs = loadScript and assert(loadScript("/SCRIPTS/TOOLS/BFDash/mspMsgs.lua"))() or dofile("src/SCRIPTS/TOOLS/BFDash/mspMsgs.lua")
 
+-- Explicit RGB colors rather than named constants -- see main.lua's note.
+local COLOR_WHITE = lcd.RGB(255, 255, 255)
+
 local M = {}
 
 local BAND_NAMES = { "A", "B", "E", "F", "R" }
@@ -59,14 +62,14 @@ function M.event(event, touchState, state, session, nowMs, armed)
     end
 
     if phase ~= "ready" then
-        lcd.drawText(10, CONTENT_TOP, "Loading VTX config...")
+        lcd.drawText(10, CONTENT_TOP, "Loading VTX config...", COLOR_WHITE)
         return
     end
 
     local values = state:get("vtx")
-    lcd.drawText(10, BAND_Y, "Band: " .. (BAND_NAMES[values.band] or tostring(values.band)))
-    lcd.drawText(10, CHANNEL_Y, "Channel: " .. tostring(values.channel))
-    lcd.drawText(10, POWER_Y, "Power: " .. tostring(values.power))
+    lcd.drawText(10, BAND_Y, "Band: " .. (BAND_NAMES[values.band] or tostring(values.band)), COLOR_WHITE)
+    lcd.drawText(10, CHANNEL_Y, "Channel: " .. tostring(values.channel), COLOR_WHITE)
+    lcd.drawText(10, POWER_Y, "Power: " .. tostring(values.power), COLOR_WHITE)
 
     if not armed and touchState and touchState.tap then
         local tx, ty = touchState.x, touchState.y

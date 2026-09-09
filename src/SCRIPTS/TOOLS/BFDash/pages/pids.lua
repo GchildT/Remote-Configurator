@@ -1,6 +1,11 @@
 local mspMsgs = loadScript and assert(loadScript("/SCRIPTS/TOOLS/BFDash/mspMsgs.lua"))() or dofile("src/SCRIPTS/TOOLS/BFDash/mspMsgs.lua")
 local mspBuffer = loadScript and assert(loadScript("/SCRIPTS/TOOLS/BFDash/transport/mspBuffer.lua"))() or dofile("src/SCRIPTS/TOOLS/BFDash/transport/mspBuffer.lua")
 
+-- Explicit RGB colors rather than named constants -- see main.lua's note.
+local COLOR_WHITE = lcd.RGB(255, 255, 255)
+local COLOR_BLUE = lcd.RGB(40, 110, 220)
+local COLOR_GREY = lcd.RGB(130, 130, 130)
+
 local M = {}
 
 local SLIDERS = {
@@ -81,19 +86,19 @@ function M.event(event, touchState, state, session, nowMs, armed)
     end
 
     if phase ~= "ready" then
-        lcd.drawText(10, ROW_TOP, "Loading PID sliders...")
+        lcd.drawText(10, ROW_TOP, "Loading PID sliders...", COLOR_WHITE)
         return
     end
 
     local values = state:get("pids")
     for i, s in ipairs(SLIDERS) do
         local y = ROW_TOP + (i - 1) * ROW_HEIGHT
-        lcd.drawText(10, y, s.label)
+        lcd.drawText(10, y, s.label, COLOR_WHITE)
         local value = values[s.key]
         local pct = (value - SLIDER_MIN) / (SLIDER_MAX - SLIDER_MIN)
-        lcd.drawRectangle(SLIDER_X, y, SLIDER_W, SLIDER_H)
-        lcd.drawFilledRectangle(SLIDER_X, y, math.floor(SLIDER_W * pct), SLIDER_H, armed and GREY or BLUE)
-        lcd.drawText(SLIDER_X + SLIDER_W + 10, y, tostring(value))
+        lcd.drawRectangle(SLIDER_X, y, SLIDER_W, SLIDER_H, COLOR_WHITE)
+        lcd.drawFilledRectangle(SLIDER_X, y, math.floor(SLIDER_W * pct), SLIDER_H, armed and COLOR_GREY or COLOR_BLUE)
+        lcd.drawText(SLIDER_X + SLIDER_W + 10, y, tostring(value), COLOR_WHITE)
 
         if not armed and touchState and touchState.tap then
             local tx, ty = touchState.x, touchState.y

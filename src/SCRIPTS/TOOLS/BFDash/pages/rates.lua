@@ -1,6 +1,9 @@
 local mspMsgs = loadScript and assert(loadScript("/SCRIPTS/TOOLS/BFDash/mspMsgs.lua"))() or dofile("src/SCRIPTS/TOOLS/BFDash/mspMsgs.lua")
 local mspBuffer = loadScript and assert(loadScript("/SCRIPTS/TOOLS/BFDash/transport/mspBuffer.lua"))() or dofile("src/SCRIPTS/TOOLS/BFDash/transport/mspBuffer.lua")
 
+-- Explicit RGB colors rather than named constants -- see main.lua's note.
+local COLOR_WHITE = lcd.RGB(255, 255, 255)
+
 local M = {}
 
 local RATE_TYPE_NAMES = { [0] = "Betaflight", [1] = "RaceFlight", [2] = "Kiss", [3] = "Actual" }
@@ -82,12 +85,12 @@ function M.event(event, touchState, state, session, nowMs, armed)
     end
 
     if phase ~= "ready" then
-        lcd.drawText(10, CONTENT_TOP, "Loading rates...")
+        lcd.drawText(10, CONTENT_TOP, "Loading rates...", COLOR_WHITE)
         return
     end
 
     local values = state:get("rates")
-    lcd.drawText(10, TYPE_Y, "Rate type: " .. (RATE_TYPE_NAMES[values.ratesType] or "?"))
+    lcd.drawText(10, TYPE_Y, "Rate type: " .. (RATE_TYPE_NAMES[values.ratesType] or "?"), COLOR_WHITE)
 
     if not armed and touchState and touchState.tap then
         local tx, ty = touchState.x, touchState.y
@@ -98,8 +101,8 @@ function M.event(event, touchState, state, session, nowMs, armed)
 
     for i, r in ipairs(ROWS) do
         local y = ROW_TOP + (i - 1) * ROW_HEIGHT
-        lcd.drawText(10, y, r.label)
-        lcd.drawText(VALUE_X, y, tostring(values[r.key]))
+        lcd.drawText(10, y, r.label, COLOR_WHITE)
+        lcd.drawText(VALUE_X, y, tostring(values[r.key]), COLOR_WHITE)
 
         if not armed and touchState and touchState.tap then
             local tx, ty = touchState.x, touchState.y

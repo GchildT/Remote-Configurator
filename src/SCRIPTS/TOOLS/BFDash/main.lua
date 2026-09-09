@@ -1,3 +1,18 @@
+-- Explicit RGB colors rather than named constants (RED/WHITE/BLUE/GREY/GREEN):
+-- this project could not confirm from source exactly how EdgeTX's named color
+-- constants are exposed to scripts (which global table, if any), and an
+-- earlier version of this script rendered a solid but completely blank
+-- screen with no error -- consistent with drawText calls silently resolving
+-- to an invisible default color. lcd.RGB(r,g,b) is confirmed to exist
+-- (radio/src/lua/api_colorlcd.cpp: LROT_FUNCENTRY(RGB, luaRGB)) and removes
+-- the ambiguity entirely.
+local COLOR_BLACK = lcd.RGB(0, 0, 0)
+local COLOR_WHITE = lcd.RGB(255, 255, 255)
+local COLOR_RED = lcd.RGB(220, 30, 30)
+local COLOR_GREEN = lcd.RGB(30, 170, 60)
+local COLOR_BLUE = lcd.RGB(40, 110, 220)
+local COLOR_GREY = lcd.RGB(130, 130, 130)
+
 -- DIAGNOSTIC WRAPPER: everything that can fail at load time (module includes,
 -- constructing the app table) runs inside a pcall. If ANY of it throws, init()
 -- and run() below fall back to drawing the actual error message on screen
@@ -314,17 +329,17 @@ local function drawFooter(armed)
     if armed then
         return
     end
-    lcd.drawFilledRectangle(BTN_SAVE_X, FOOTER_Y, BTN_SAVE_W, FOOTER_H, GREEN)
-    lcd.drawText(BTN_SAVE_X + 10, FOOTER_Y + 12, "Save")
-    lcd.drawFilledRectangle(BTN_CANCEL_X, FOOTER_Y, BTN_CANCEL_W, FOOTER_H, GREY)
-    lcd.drawText(BTN_CANCEL_X + 10, FOOTER_Y + 12, "Cancel")
+    lcd.drawFilledRectangle(BTN_SAVE_X, FOOTER_Y, BTN_SAVE_W, FOOTER_H, COLOR_GREEN)
+    lcd.drawText(BTN_SAVE_X + 10, FOOTER_Y + 12, "Save", COLOR_WHITE)
+    lcd.drawFilledRectangle(BTN_CANCEL_X, FOOTER_Y, BTN_CANCEL_W, FOOTER_H, COLOR_GREY)
+    lcd.drawText(BTN_CANCEL_X + 10, FOOTER_Y + 12, "Cancel", COLOR_WHITE)
 
     if saveError then
-        lcd.drawText(220, FOOTER_Y + 12, saveError, RED)
+        lcd.drawText(220, FOOTER_Y + 12, saveError, COLOR_RED)
     elseif saveFlow ~= "idle" then
-        lcd.drawText(220, FOOTER_Y + 12, "Saving...")
+        lcd.drawText(220, FOOTER_Y + 12, "Saving...", COLOR_WHITE)
     elseif app.state:isAnyDirty() then
-        lcd.drawText(220, FOOTER_Y + 12, "* unsaved changes")
+        lcd.drawText(220, FOOTER_Y + 12, "* unsaved changes", COLOR_WHITE)
     end
 end
 
@@ -381,12 +396,12 @@ local function drawProfileRow(armed)
     if armed then
         return
     end
-    lcd.drawText(4, PROFILE_Y, "Profile:")
+    lcd.drawText(4, PROFILE_Y, "Profile:", COLOR_WHITE)
     for i = 1, 3 do
         local x = PROFILE_BOX_X0 + (i - 1) * (PROFILE_BOX_W + PROFILE_BOX_GAP)
         local isActive = (i == app.profileSlot)
-        lcd.drawFilledRectangle(x, PROFILE_Y, PROFILE_BOX_W, PROFILE_ROW_H, isActive and BLUE or GREY)
-        lcd.drawText(x + 10, PROFILE_Y, tostring(i))
+        lcd.drawFilledRectangle(x, PROFILE_Y, PROFILE_BOX_W, PROFILE_ROW_H, isActive and COLOR_BLUE or COLOR_GREY)
+        lcd.drawText(x + 10, PROFILE_Y, tostring(i), COLOR_WHITE)
     end
 end
 
@@ -464,9 +479,9 @@ local function drawTabBar(armed)
         local w = math.floor(LCD_W / #pageNames)
         local x = (i - 1) * w
         if i == app.activeTab then
-            lcd.drawFilledRectangle(x, TAB_Y, w, TAB_H, BLUE)
+            lcd.drawFilledRectangle(x, TAB_Y, w, TAB_H, COLOR_BLUE)
         end
-        lcd.drawText(x + 8, TAB_Y + 4, name)
+        lcd.drawText(x + 8, TAB_Y + 4, name, COLOR_WHITE)
     end
 end
 
@@ -510,18 +525,18 @@ local function runBody(event, touchState)
         pumpConnection(nowMs)
     end
 
-    lcd.clear()
+    lcd.clear(COLOR_BLACK)
 
     if app.connection ~= "connected" then
-        lcd.drawText(10, 10, "Betaflight Dashboard", MIDSIZE)
-        lcd.drawText(10, 40, connectionMessage())
+        lcd.drawText(10, 10, "Betaflight Dashboard", COLOR_WHITE)
+        lcd.drawText(10, 40, connectionMessage(), COLOR_WHITE)
         return
     end
 
     local armed = app.arm:isArmed()
     if armed then
-        lcd.drawFilledRectangle(0, 0, LCD_W, 20, RED)
-        lcd.drawText(10, 4, "ARMED -- read only", WHITE)
+        lcd.drawFilledRectangle(0, 0, LCD_W, 20, COLOR_RED)
+        lcd.drawText(10, 4, "ARMED -- read only", COLOR_WHITE)
     end
 
     -- Touch dispatch, highest priority first. Each handler claims the tap if it
@@ -556,17 +571,17 @@ end
 
 function run(event, touchState)
     if not setupOk then
-        lcd.clear()
-        lcd.drawText(5, 5, "BFDash failed to load:", MIDSIZE)
-        lcd.drawText(5, 30, tostring(setupErr))
+        lcd.clear(COLOR_BLACK)
+        lcd.drawText(5, 5, "BFDash failed to load:", COLOR_WHITE)
+        lcd.drawText(5, 30, tostring(setupErr), COLOR_WHITE)
         return
     end
 
     local ok, runErr = pcall(runBody, event, touchState)
     if not ok then
-        lcd.clear()
-        lcd.drawText(5, 5, "BFDash crashed in run():", MIDSIZE)
-        lcd.drawText(5, 30, tostring(runErr))
+        lcd.clear(COLOR_BLACK)
+        lcd.drawText(5, 5, "BFDash crashed in run():", COLOR_WHITE)
+        lcd.drawText(5, 30, tostring(runErr), COLOR_WHITE)
     end
 end
 
