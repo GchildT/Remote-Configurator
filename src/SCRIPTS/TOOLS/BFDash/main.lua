@@ -176,6 +176,22 @@ end
 local connectFlow = "variant" -- variant | apiVersion | done
 local apiVersionText = nil
 
+-- Governs retrying the initial handshake after a timeout/error, and
+-- re-attempting it after a detected disconnect (see RECONNECT_INTERVAL_MS
+-- and the stale-telemetry watchdog in runBody below).
+local RECONNECT_INTERVAL_MS = 1000
+local nextConnectAttemptMs = 0
+
+-- How long the FM sensor (arm status) must go stale while "connected" before
+-- this is treated as the flight controller having gone away (unplugged,
+-- swapped for a different one, powered off) rather than a single dropped
+-- telemetry frame. getValue("FM") already reflects EdgeTX's own sensor
+-- staleness timeout, which debounces brief dropouts on its own, so this only
+-- needs to guard against acting on one bad tick -- kept short so swapping
+-- FCs feels responsive.
+local DISCONNECT_STALE_MS = 1500
+local staleSinceMs = nil
+
 local function checkConnection()
     connectFlow = "variant"
     app.session:request(mspMsgs.CMD.FC_VARIANT, "")
@@ -216,6 +232,7 @@ local function pumpConnection(nowMs)
     elseif status == "timeout" or status == "error" then
         app.session:reset()
         app.connection = "disconnected"
+        nextConnectAttemptMs = nowMs + RECONNECT_INTERVAL_MS
     end
 end
 
@@ -518,6 +535,38 @@ local function pumpProfileFlow(nowMs)
     return false
 end
 
+-- Returns the whole app to exactly the state it's in right after init() --
+-- as if the script had just been launched -- so unplugging one flight
+-- controller and plugging in a different one needs no script restart. Called
+-- both when the connection watchdog below detects a lost link, and whenever
+-- a not-yet-connected handshake needs to retry.
+--
+-- Cached PID/rate/filter/VTX values, dirty edits, the save/profile-switch
+-- flows, and the arm tracker all belong to whichever FC was last talked to --
+-- carrying any of it over to a newly-plugged FC would risk showing stale
+-- values as if they were the new FC's, or silently discarding/misapplying an
+-- in-flight save/profile-switch that can never complete now the link is gone.
+local function resetToInitialState()
+    app.session:reset()
+    app.arm = safety.new()
+    app.profileSlot = 1
+    app.activeTab = 1
+    clearCachedState()
+
+    saveFlow = "idle"
+    saveQueue = nil
+    saveIndex = 0
+    saveWritten = nil
+    saveError = nil
+
+    profileFlow = "idle"
+    pendingSlot = nil
+
+    staleSinceMs = nil
+    app.connection = "connecting"
+    checkConnection()
+end
+
 local function drawTabBar(armed)
     for i, name in ipairs(pageNames) do
         local w = math.floor(LCD_W / #pageNames)
@@ -568,6 +617,29 @@ local function runBody(event, touchState)
 
     if app.connection == "connecting" then
         pumpConnection(nowMs)
+    elseif app.connection == "disconnected" and nowMs >= nextConnectAttemptMs then
+        -- Keep retrying the handshake on our own -- otherwise a flight
+        -- controller that wasn't ready yet (or a freshly swapped-in one)
+        -- would need a script restart to ever be noticed.
+        app.connection = "connecting"
+        checkConnection()
+    elseif app.connection == "connected" then
+        -- Watchdog: once connected, nothing else re-checks that the FC is
+        -- still there. getValue("FM") going stale (via pumpArmStatus above)
+        -- is the signal that its telemetry has stopped arriving -- unplugged,
+        -- swapped for another FC, or powered off. Reset everything back to
+        -- first-start state so a different FC can be plugged in without
+        -- restarting the script, rather than carrying over the old FC's
+        -- cached settings, dirty edits, or in-flight save/profile flow.
+        if app.arm:isStale() then
+            if staleSinceMs == nil then
+                staleSinceMs = nowMs
+            elseif nowMs - staleSinceMs >= DISCONNECT_STALE_MS then
+                resetToInitialState()
+            end
+        else
+            staleSinceMs = nil
+        end
     end
 
     lcd.clear(COLOR_BLACK)

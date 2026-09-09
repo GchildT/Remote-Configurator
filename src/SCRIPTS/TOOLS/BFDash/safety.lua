@@ -52,6 +52,10 @@ function Tracker:markStale()
     self.stale = true
 end
 
+function Tracker:isStale()
+    return self.stale
+end
+
 -- Diagnostic accessor: lets the UI show whether/what flight-mode frames are
 -- actually being received, for bench-testing the arm-lock. Not used by any
 -- safety-relevant logic itself.

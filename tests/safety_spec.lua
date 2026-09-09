@@ -120,4 +120,16 @@ testkit.describe("safety arm tracker", function()
         t:feedFlightModeFrame("ACRO\0")
         testkit.assertEquals(t:isArmed(), true, "fresh frame re-evaluated normally")
     end)
+
+    -- isStale() is the disconnect-watchdog's signal (main.lua): the FM sensor
+    -- going stale while "connected" means the flight controller's telemetry
+    -- has stopped arriving -- unplugged, swapped, or powered off.
+    testkit.it("isStale reflects staleness independent of armed state", function()
+        local t = safety.new()
+        testkit.assertTrue(t:isStale(), "stale before any frame")
+        t:feedFlightModeFrame("ACRO\0")
+        testkit.assertEquals(t:isStale(), false, "not stale after a valid frame")
+        t:markStale()
+        testkit.assertTrue(t:isStale(), "stale again after markStale")
+    end)
 end)
