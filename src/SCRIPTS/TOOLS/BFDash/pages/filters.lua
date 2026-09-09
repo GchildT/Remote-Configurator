@@ -11,11 +11,14 @@ local EVT_ROTARY_RIGHT = 0x1004
 
 local M = {}
 
+-- Labels match Betaflight Configurator's own Filter Settings group names
+-- exactly (locales/en/messages.json: pidTuningGyroLowpass/GyroLowpass2/
+-- DTermLowpass/DTermLowpass2).
 local ROWS = {
-    { key = "gyroLpf1Hz", label = "Gyro LPF1 (Hz)" },
-    { key = "gyroLpf2Hz", label = "Gyro LPF2 (Hz)" },
-    { key = "dtermLpf1Hz", label = "D-term LPF1 (Hz)" },
-    { key = "dtermLpf2Hz", label = "D-term LPF2 (Hz)" },
+    { key = "gyroLpf1Hz", label = "Gyro Lowpass 1 (Hz)" },
+    { key = "gyroLpf2Hz", label = "Gyro Lowpass 2 (Hz)" },
+    { key = "dtermLpf1Hz", label = "D Term Lowpass 1 (Hz)" },
+    { key = "dtermLpf2Hz", label = "D Term Lowpass 2 (Hz)" },
 }
 -- Layout: content starts at y=66, below the tab bar + profile row (which end at
 -- y=64). 4 rows * 26px = 104px span y=66..170, well clear of the footer at 232.
