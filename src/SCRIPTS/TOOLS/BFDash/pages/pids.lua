@@ -53,6 +53,7 @@ local function beginSave(session, state)
     pendingRawBuffer = buf
     session:request(mspMsgs.CMD.SET_SIMPLIFIED_TUNING, buf)
 end
+M.beginSave = beginSave
 
 function M.event(event, touchState, state, session, nowMs, armed)
     if phase == "loading" then
@@ -92,10 +93,6 @@ function M.event(event, touchState, state, session, nowMs, armed)
             end
         end
     end
-
-    -- Save/Cancel handled by main.lua's shared footer (Task 13 extends main.lua);
-    -- this page exposes the hooks main.lua's footer calls:
-    M.beginSave = beginSave
 end
 
 return M
