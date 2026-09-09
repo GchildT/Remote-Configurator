@@ -37,17 +37,33 @@ testkit.describe("msp session", function()
         session:poll(0)
         local data = pushLog[1].data
         testkit.assertEquals(type(data), "table", "data is a table, not a string")
-        -- API_VERSION request chunk: status(0x50), flags(0), cmdLo(1), cmdHi(0),
-        -- sizeLo(0), sizeHi(0) -- 6 header bytes, no payload for an empty request.
-        testkit.assertEquals(#data, 6, "6-byte header, empty payload")
-        testkit.assertEquals(data[1], 0x50, "byte 1: status")
-        testkit.assertEquals(data[3], 1, "byte 3: cmd lo")
+        -- Confirmed against Betaflight firmware source (src/main/rx/crsf.c):
+        -- every outgoing MSP_REQ/MSP_WRITE frame carries a 2-byte
+        -- [destination][origin] prefix before the MSP chunk itself. Chunk:
+        -- status(0x50), flags(0), cmdLo(1), cmdHi(0), sizeLo(0), sizeHi(0)
+        -- -- 6 header bytes, no payload for an empty request -- so 8 bytes total.
+        testkit.assertEquals(#data, 8, "2-byte CRSF address prefix + 6-byte header, empty payload")
+        testkit.assertEquals(data[1], 0xC8, "byte 1: destination (CRSF_ADDRESS_FLIGHT_CONTROLLER)")
+        testkit.assertEquals(data[2], 0xEA, "byte 2: origin (CRSF_ADDRESS_RADIO_TRANSMITTER)")
+        testkit.assertEquals(data[3], 0x50, "byte 3: MSP status byte")
+        testkit.assertEquals(data[5], 1, "byte 5: cmd lo")
     end)
 
     testkit.it("round-trips a byte string through tableToString correctly", function()
         local msp = freshMsp()
         local t = { 0x41, 0x42, 0x43, 0x00, 0xFF }
         testkit.assertEquals(msp.tableToString(t), "ABC" .. string.char(0) .. string.char(0xFF), "table converted to string")
+    end)
+
+    testkit.it("strips the 2-byte CRSF address prefix from an incoming MSP_RESP packet", function()
+        -- Confirmed against Betaflight firmware source (src/main/telemetry/
+        -- crsf.c: crsfSendMspResponse writes [mspRequestOriginID]
+        -- [CRSF_ADDRESS_FLIGHT_CONTROLLER] before the MSP chunk in every reply.
+        local msp = freshMsp()
+        local packet = { 0xEA, 0xC8, 0x50, 0x00, 0x01, 0x00, 0x03, 0x00, 0x41, 0x42, 0x43 }
+        local chunkString = msp.responseTableToChunkString(packet)
+        testkit.assertEquals(#chunkString, 9, "prefix stripped, 9 bytes remain")
+        testkit.assertEquals(string.byte(chunkString, 1), 0x50, "first byte is now the MSP status byte")
     end)
 
     testkit.it("assembles a single-chunk response fed via session:feed and reports done", function()

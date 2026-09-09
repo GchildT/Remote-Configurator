@@ -6,17 +6,30 @@ local mspChunk = loadScript and assert(loadScript("/SCRIPTS/TOOLS/BFDash/transpo
 -- the save flow built on it) depends on getting a reply to confirm the write.
 local CRSF_FRAMETYPE_MSP_REQ = 0x7A
 
+-- Confirmed against Betaflight firmware source (src/main/rx/crsf.c: the
+-- CRSF_FRAMETYPE_MSP_REQ/MSP_WRITE case strips exactly
+-- CRSF_FRAME_ORIGIN_DEST_SIZE=2 leading bytes -- [[destination][origin]] --
+-- before treating the remainder as the MSP-over-telemetry chunk that
+-- mspChunk.lua builds; src/main/telemetry/msp_shared.c's own header comment
+-- documents the same layout: "<sync/address><length><type><destination>
+-- <origin><status><MSP_body><CRC>". Without these two bytes, Betaflight
+-- misreads the MSP status byte as a destination address, fails the address
+-- check, and silently drops the frame -- no error, no response, exactly the
+-- "no response from flight controller" symptom this fixed.
+local CRSF_ADDRESS_FLIGHT_CONTROLLER = 0xC8 -- destination: this session always talks to the FC
+local CRSF_ADDRESS_RADIO_TRANSMITTER = 0xEA -- origin: this session always speaks as the radio
+
 -- Confirmed against EdgeTX firmware source (radio/src/lua/api_general.cpp,
 -- luaCrossfireTelemetryPush/Pop): crossfireTelemetryPush's second argument
 -- must be a Lua TABLE of byte values (1-indexed), not a packed string --
 -- EdgeTX builds the actual CRSF frame (address/length/CRC) around it. The
 -- rest of this codebase (mspChunk.lua's chunk framing, the MSP status byte,
 -- etc.) works entirely in byte strings, which is the right internal
--- representation -- these two helpers are the sole adapter at the boundary.
-local function stringToTable(s)
-    local t = {}
+-- representation -- these are the sole adapters at the boundary.
+local function chunkToOutgoingTable(s)
+    local t = { CRSF_ADDRESS_FLIGHT_CONTROLLER, CRSF_ADDRESS_RADIO_TRANSMITTER }
     for i = 1, #s do
-        t[i] = string.byte(s, i)
+        t[#t + 1] = string.byte(s, i)
     end
     return t
 end
@@ -29,8 +42,18 @@ local function tableToString(t)
     return s
 end
 
+-- Betaflight's MSP_RESP frame carries the same 2-byte [destination][origin]
+-- prefix as our outgoing requests (src/main/telemetry/crsf.c:
+-- crsfSendMspResponse writes [mspRequestOriginID][CRSF_ADDRESS_FLIGHT_
+-- CONTROLLER] before the MSP chunk). Strip it before handing the rest to
+-- mspChunk's assembler, which expects to see the MSP status byte first.
+local function responseTableToChunkString(packet)
+    return string.sub(tableToString(packet), 3)
+end
+
 local M = {}
 M.tableToString = tableToString
+M.responseTableToChunkString = responseTableToChunkString
 
 local Session = {}
 Session.__index = Session
@@ -72,7 +95,7 @@ function Session:poll(nowMs)
 
     if #self.outgoing > 0 then
         local chunk = table.remove(self.outgoing, 1)
-        crossfireTelemetryPush(CRSF_FRAMETYPE_MSP_REQ, stringToTable(chunk))
+        crossfireTelemetryPush(CRSF_FRAMETYPE_MSP_REQ, chunkToOutgoingTable(chunk))
     end
 
     if (nowMs - self.startedAtMs) > self.timeoutMs then

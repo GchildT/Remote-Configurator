@@ -110,9 +110,11 @@ local BTN_CANCEL_X, BTN_CANCEL_W = 110, 100
 -- crossfireTelemetryPop() returns TWO values -- command (number), packet
 -- (table of byte values) -- not a single table with .command/.data fields,
 -- and returns nothing at all (not nil) when the queue is empty. Confirmed
--- against EdgeTX firmware source (radio/src/lua/api_general.cpp). The rest
--- of this codebase works in byte strings, so the packet table is converted
--- via msp.tableToString right here at the boundary.
+-- against EdgeTX firmware source (radio/src/lua/api_general.cpp). MSP_RESP
+-- packets additionally carry a 2-byte CRSF [destination][origin] prefix
+-- (confirmed against Betaflight source, telemetry/crsf.c) that
+-- msp.responseTableToChunkString strips before handing the rest to
+-- session:feed(); FLIGHT_MODE frames carry no such prefix.
 local function pumpTelemetry(nowMs)
     while true do
         local command, packet = crossfireTelemetryPop()
@@ -120,7 +122,7 @@ local function pumpTelemetry(nowMs)
             break
         end
         if command == CRSF_FRAMETYPE_MSP_RESP then
-            app.session:feed(msp.tableToString(packet))
+            app.session:feed(msp.responseTableToChunkString(packet))
         elseif command == CRSF_FRAMETYPE_FLIGHT_MODE then
             app.arm:feedFlightModeFrame(msp.tableToString(packet))
             app.lastFlightModeMs = nowMs
