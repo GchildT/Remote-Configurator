@@ -498,14 +498,11 @@ local function connectionMessage()
     return "No response from flight controller. Check link."
 end
 
-function run(event, touchState)
-    if not setupOk then
-        lcd.clear()
-        lcd.drawText(5, 5, "BFDash failed to load:", MIDSIZE)
-        lcd.drawText(5, 30, tostring(setupErr))
-        return
-    end
-
+-- DIAGNOSTIC WRAPPER (see the setup-time one above): the real per-frame logic
+-- lives in runBody(); the global run() below pcalls it so a mid-frame error
+-- draws on screen instead of leaving a blank/frozen display. Remove once the
+-- script is confirmed running cleanly on real hardware.
+local function runBody(event, touchState)
     local nowMs = getTime() * 10
     pumpTelemetry(nowMs)
 
@@ -555,6 +552,22 @@ function run(event, touchState)
     end
 
     drawFooter(armed)
+end
+
+function run(event, touchState)
+    if not setupOk then
+        lcd.clear()
+        lcd.drawText(5, 5, "BFDash failed to load:", MIDSIZE)
+        lcd.drawText(5, 30, tostring(setupErr))
+        return
+    end
+
+    local ok, runErr = pcall(runBody, event, touchState)
+    if not ok then
+        lcd.clear()
+        lcd.drawText(5, 5, "BFDash crashed in run():", MIDSIZE)
+        lcd.drawText(5, 30, tostring(runErr))
+    end
 end
 
 -- EdgeTX's script loader requires the top-level chunk to return a table with
