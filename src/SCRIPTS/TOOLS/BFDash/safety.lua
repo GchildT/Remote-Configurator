@@ -3,7 +3,7 @@ local Tracker = {}
 Tracker.__index = Tracker
 
 function M.new()
-    return setmetatable({ armed = true, stale = true }, Tracker)
+    return setmetatable({ armed = true, stale = true, lastRawText = nil, frameCount = 0 }, Tracker)
 end
 
 -- Verified from Betaflight 4.5.5 src/main/telemetry/crsf.c: crsfFrameFlightMode()
@@ -25,6 +25,8 @@ function Tracker:feedFlightModeFrame(data)
     local endsWithStar = string.sub(text, -1) == "*"
     self.armed = not endsWithStar
     self.stale = false
+    self.lastRawText = text
+    self.frameCount = self.frameCount + 1
 end
 
 function Tracker:isArmed()
@@ -36,6 +38,13 @@ end
 
 function Tracker:markStale()
     self.stale = true
+end
+
+-- Diagnostic accessor: lets the UI show whether/what flight-mode frames are
+-- actually being received, for bench-testing the arm-lock. Not used by any
+-- safety-relevant logic itself.
+function Tracker:debugInfo()
+    return self.stale, self.armed, self.lastRawText, self.frameCount
 end
 
 return M
