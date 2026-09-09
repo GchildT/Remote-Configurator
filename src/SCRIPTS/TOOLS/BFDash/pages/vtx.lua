@@ -71,7 +71,7 @@ function M.event(event, touchState, state, session, nowMs, armed)
     lcd.drawText(10, CHANNEL_Y, "Channel: " .. tostring(values.channel), COLOR_WHITE)
     lcd.drawText(10, POWER_Y, "Power: " .. tostring(values.power), COLOR_WHITE)
 
-    if not armed and touchState and touchState.tap then
+    if not armed and touchState then
         local tx, ty = touchState.x, touchState.y
         local dec = tx >= DEC_X and tx < DEC_X + DEC_W
         local inc = tx >= INC_X and tx < INC_X + INC_W

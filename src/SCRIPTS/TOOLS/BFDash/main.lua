@@ -212,8 +212,14 @@ end
 --------------------------------------------------------------------------------
 local tapConsumed = false
 
+-- EdgeTX's touch event table (radio/src/lua/lua_event.cpp:
+-- luaPushTouchEventTable) has fields x, y, tapCount -- there is no `tap`
+-- field. touchState is only ever passed to run() at all when the current
+-- event is a touch event, so its mere presence already means a touch
+-- occurred this tick; that's the correct check here, not a nonexistent
+-- boolean field (which was always nil/false and silently blocked all input).
 local function tapInRect(touchState, x, y, w, h)
-    if tapConsumed or not touchState or not touchState.tap then
+    if tapConsumed or not touchState then
         return false
     end
     return touchState.x >= x and touchState.x < x + w

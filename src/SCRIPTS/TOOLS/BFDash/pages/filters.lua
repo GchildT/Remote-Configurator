@@ -79,7 +79,7 @@ function M.event(event, touchState, state, session, nowMs, armed)
         lcd.drawText(10, y, r.label, COLOR_WHITE)
         lcd.drawText(VALUE_X, y, tostring(values[r.key]), COLOR_WHITE)
 
-        if not armed and touchState and touchState.tap then
+        if not armed and touchState then
             local tx, ty = touchState.x, touchState.y
             if ty >= y and ty < y + ROW_HEIGHT then
                 if tx >= VALUE_X + 60 and tx <= VALUE_X + 85 then

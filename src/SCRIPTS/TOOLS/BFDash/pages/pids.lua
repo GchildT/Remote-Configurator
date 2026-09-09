@@ -100,7 +100,7 @@ function M.event(event, touchState, state, session, nowMs, armed)
         lcd.drawFilledRectangle(SLIDER_X, y, math.floor(SLIDER_W * pct), SLIDER_H, armed and COLOR_GREY or COLOR_BLUE)
         lcd.drawText(SLIDER_X + SLIDER_W + 10, y, tostring(value), COLOR_WHITE)
 
-        if not armed and touchState and touchState.tap then
+        if not armed and touchState then
             local tx, ty = touchState.x, touchState.y
             if tx >= SLIDER_X and tx <= SLIDER_X + SLIDER_W and ty >= y and ty < y + SLIDER_H then
                 local newPct = (tx - SLIDER_X) / SLIDER_W

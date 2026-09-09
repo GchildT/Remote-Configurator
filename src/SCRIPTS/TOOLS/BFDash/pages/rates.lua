@@ -92,7 +92,7 @@ function M.event(event, touchState, state, session, nowMs, armed)
     local values = state:get("rates")
     lcd.drawText(10, TYPE_Y, "Rate type: " .. (RATE_TYPE_NAMES[values.ratesType] or "?"), COLOR_WHITE)
 
-    if not armed and touchState and touchState.tap then
+    if not armed and touchState then
         local tx, ty = touchState.x, touchState.y
         if ty >= TYPE_Y and ty < TYPE_Y + TYPE_H and tx >= TYPE_X and tx < TYPE_X + TYPE_W then
             state:setField("rates", "ratesType", (values.ratesType + 1) % 4)
@@ -104,7 +104,7 @@ function M.event(event, touchState, state, session, nowMs, armed)
         lcd.drawText(10, y, r.label, COLOR_WHITE)
         lcd.drawText(VALUE_X, y, tostring(values[r.key]), COLOR_WHITE)
 
-        if not armed and touchState and touchState.tap then
+        if not armed and touchState then
             local tx, ty = touchState.x, touchState.y
             if ty >= y and ty < y + ROW_HEIGHT then
                 if tx >= VALUE_X + 40 and tx <= VALUE_X + 60 then
