@@ -202,6 +202,39 @@ testkit.describe("msp session", function()
         testkit.assertEquals(payload, nil, "stale payload dropped")
     end)
 
+    testkit.it("retries the same chunk when crossfireTelemetryPush reports the output buffer busy", function()
+        -- crossfireTelemetryPush() returns false (and queues nothing) when
+        -- EdgeTX's own outgoing telemetry buffer isn't free yet -- confirmed
+        -- against EdgeTX firmware source (radio/src/lua/api_general.cpp).
+        -- poll() must not drop the chunk in that case, or a multi-chunk
+        -- request desyncs Betaflight's reassembly with no error.
+        local msp = freshMsp()
+        local originalPush = _G.crossfireTelemetryPush
+        local bufferFree = false
+        _G.crossfireTelemetryPush = function(command, data)
+            if not bufferFree then
+                return false
+            end
+            table.insert(pushLog, { command = command, data = data })
+            return true
+        end
+        local ok, err = pcall(function()
+            local session = msp.new(1000)
+            session:request(1, "")
+            session:poll(0)
+            testkit.assertEquals(#pushLog, 0, "buffer busy: nothing actually queued yet")
+            session:poll(10)
+            testkit.assertEquals(#pushLog, 0, "still busy: poll retries rather than dropping the chunk")
+            bufferFree = true
+            session:poll(20)
+            testkit.assertEquals(#pushLog, 1, "buffer free: the same chunk finally gets queued")
+        end)
+        _G.crossfireTelemetryPush = originalPush
+        if not ok then
+            error(err, 0)
+        end
+    end)
+
     testkit.it("sends a second request only after the first completes", function()
         local msp = freshMsp()
         local session = msp.new(1000)

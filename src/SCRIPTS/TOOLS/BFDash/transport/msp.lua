@@ -84,6 +84,23 @@ end
 -- Called every tick: pushes the next outgoing chunk (if any) and checks for
 -- timeout. Does NOT touch crossfireTelemetryPop -- see feed() below and the
 -- module's Interfaces note on why.
+--
+-- crossfireTelemetryPush() only actually queues the frame when EdgeTX's own
+-- outgoing telemetry buffer is free, and silently does nothing otherwise --
+-- it returns a boolean saying which happened (confirmed against EdgeTX
+-- firmware source, radio/src/lua/api_general.cpp: luaCrossfireTelemetryPush
+-- pushes only inside `else if (outputTelemetryBuffer.isAvailable())` and
+-- otherwise falls through to `lua_pushboolean(L, false)`). A single-chunk
+-- request (every GET this project sends) tolerates ignoring that return
+-- value, since the same chunk just gets handed to the buffer again on the
+-- next poll() while nothing else has changed. A multi-chunk request (every
+-- SET this project sends, ~50+ bytes split across ~7 chunks) does not: only
+-- popping a chunk off `outgoing` once the push actually succeeded is required
+-- to avoid silently dropping interior chunks whenever the buffer isn't free
+-- yet on a given tick -- a dropped chunk desyncs Betaflight's multi-chunk
+-- reassembly with no error, and the FC simply never replies. This was the
+-- root cause of writes failing with "no reply" while reads (single-chunk
+-- requests) worked fine.
 function Session:poll(nowMs)
     if self.state ~= "pending" then
         return self.state
@@ -94,8 +111,11 @@ function Session:poll(nowMs)
     end
 
     if #self.outgoing > 0 then
-        local chunk = table.remove(self.outgoing, 1)
-        crossfireTelemetryPush(CRSF_FRAMETYPE_MSP_REQ, chunkToOutgoingTable(chunk))
+        local chunk = self.outgoing[1]
+        local queued = crossfireTelemetryPush(CRSF_FRAMETYPE_MSP_REQ, chunkToOutgoingTable(chunk))
+        if queued then
+            table.remove(self.outgoing, 1)
+        end
     end
 
     if (nowMs - self.startedAtMs) > self.timeoutMs then

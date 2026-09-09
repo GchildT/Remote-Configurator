@@ -41,7 +41,13 @@ local setupOk, setupErr = pcall(function()
     vtxPage = include("pages/vtx.lua")
 
     CRSF_FRAMETYPE_MSP_RESP = 0x7B
-    REQUEST_TIMEOUT_MS = 800
+    -- Generous enough to cover a full multi-chunk SET request (the largest,
+    -- MSP_SET_SIMPLIFIED_TUNING, needs ~7 chunks): crossfireTelemetryPush()
+    -- only actually queues a chunk when EdgeTX's own outgoing telemetry
+    -- buffer is free (see transport/msp.lua's Session:poll() note), so a
+    -- multi-chunk write can take noticeably longer to actually get on the
+    -- air than a single-chunk read, depending on the link's telemetry ratio.
+    REQUEST_TIMEOUT_MS = 2000
 
     -- Minimum MSP API version this project's byte offsets are verified
     -- against (see the connection-check comment below for the full
