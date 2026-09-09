@@ -32,21 +32,30 @@ the four above.
 ```
 main.lua                - entry point: connection check, tab bar, page router,
                            Save/Cancel/Reload footer
-transport/msp.lua       - MSP-over-CRSF framing (crossfireTelemetryPush/Pop),
-                           chunking, sequence numbers, CRC, request/response
-                           matching, timeouts
-transport/mspMsgs.lua   - encode/decode for specific MSP messages: PID,
-                           RC_TUNING, FILTER_CONFIG, VTX_CONFIG, profile
-                           select, EEPROM_WRITE, FC_VARIANT/VERSION,
-                           API_VERSION
+transport/mspChunk.lua  - CRSF MSP chunk framing: builds/parses the status-byte
+                           chunk header (seq/start/version/error bits) used by
+                           crossfireTelemetryPush/Pop, per Betaflight's
+                           telemetry/msp_shared.c wire format
+transport/msp.lua       - session layer: request/response matching by command
+                           id, polling, timeouts, retry
+transport/mspBuffer.lua - generic "patchable message" codec: GET a message's
+                           raw response bytes, read/write specific fields by
+                           byte offset, SET back the full same-length buffer
+                           unchanged elsewhere (used for SIMPLIFIED_TUNING,
+                           RC_TUNING, FILTER_CONFIG — all confirmed
+                           round-trip-symmetric in firmware source)
+mspMsgs.lua              - message-specific field offset tables + FC
+                           compatibility check (API_VERSION/FC_VARIANT/
+                           FC_VERSION) + bespoke VTX_CONFIG encode/decode
+                           (its SET wire format differs from its GET format)
+                           + profile select + EEPROM_WRITE
 state.lua               - in-memory model: last-read FC values, staged
                            (unsaved) edits, dirty flag, selected PID/rate
                            profile slot
-safety.lua              - arm-status polling (CRSF flight-mode telemetry
-                           sensor, MSP_STATUS fallback), drives read-only lock
-pidSliders.lua          - Betaflight 4.5 master-slider math (Master P/I/D,
-                           Roll/Pitch ratio, Response, Damping, Stability, FF
-                           sliders -> per-axis P/I/D/FF)
+safety.lua              - arm-status detection by parsing the CRSF
+                           FLIGHT_MODE telemetry frame (type 0x21) directly;
+                           fail-safe treats an unreadable/missing frame as
+                           armed
 pages/pids.lua           - PID slider screen
 pages/rates.lua          - rate screen (rate-type selector)
 pages/filters.lua        - gyro/D-term lowpass cutoff screen
@@ -58,11 +67,34 @@ Each page module exposes `create()`, `update(staged)`, `event(...)` and reads
 This keeps the risky wire-protocol code in one place, testable independently
 of UI.
 
-The MSP-over-CRSF transport layer is based on the proven framing pattern used
-by established open-source EdgeTX/Betaflight LUA projects (e.g.
-`betaflight-tx-lua-scripts`, `rfsuite`) rather than re-derived from the raw
-spec — chunking/CRC/sequencing bugs there would silently corrupt writes to the
-flight controller, so this is not an area to improvise in.
+**Protocol verification addendum (2026-09-09):** the MSP-over-CRSF chunk
+framing, every message's exact byte layout, and the CRSF FLIGHT_MODE arm
+convention below were pulled directly from the Betaflight 4.5.5 firmware
+source (`telemetry/msp_shared.c`, `msp/msp.c`, `msp/msp_protocol.h`,
+`telemetry/crsf.c`) rather than derived from memory or an existing
+third-party script, since getting this wrong is safety-relevant. Two
+corrections to the original design worth calling out:
+
+- **No client-side PID slider math is needed.** Betaflight 4.5 exposes the
+  simplified-tuning slider values directly via `MSP_SIMPLIFIED_TUNING` (140)
+  / `MSP_SET_SIMPLIFIED_TUNING` (141) — the firmware itself computes the
+  resulting per-axis P/I/D/F from the 8 slider percentages
+  (`simplified_pids_mode`, `simplified_master_multiplier`,
+  `simplified_roll_pitch_ratio`, `simplified_i_gain`, `simplified_d_gain`,
+  `simplified_pi_gain`, `simplified_dmin_ratio`, `simplified_feedforward_gain`,
+  `simplified_pitch_pi_gain`). We read/write these raw U8 percentages only —
+  no formula to port or independently test. This removes the `pidSliders.lua`
+  module from the original architecture entirely.
+- **Arm status comes from the CRSF FLIGHT_MODE frame, not MSP_STATUS.** The
+  MSP_STATUS arming bit lives in a dynamically-ordered bitmask
+  (`packFlightModeFlags`) whose bit position isn't a fixed constant, so it
+  can't be safely hardcoded. Instead, the CRSF FLIGHT_MODE telemetry frame
+  (type `0x21`) that Betaflight already sends carries this directly as text,
+  and — critically — **a trailing `*` means DISARMED, not armed**
+  (`telemetry/crsf.c: crsfFrameFlightMode`, confirmed from source). Armed is
+  the absence of the trailing `*`. Getting this backwards would silently
+  disable the arm-lock, so `safety.lua` must implement it exactly this way,
+  and Task testing must explicitly bench-verify both states.
 
 ## Data flow
 
@@ -79,18 +111,22 @@ flight controller, so this is not an area to improvise in.
 5. Pressing **Save** sends the corresponding SET messages, then
    `MSP_EEPROM_WRITE` to persist; **Cancel/Reload** discards staged edits and
    re-reads from the FC.
-6. Switching profile slots (1/2/3) sends the MSP profile-select command,
-   re-reads that slot's values, and discards unsaved edits in the current slot
-   (with a confirmation if dirty).
+6. Switching profile slots (1/2/3) sends `MSP_SELECT_SETTING` (command id 210;
+   value bit 7 set = rate profile index, clear = PID profile index — confirmed
+   from source, and note this differs from an earlier draft's assumed id of
+   10), re-reads that slot's values, and discards unsaved edits in the current
+   slot (with a confirmation if dirty).
 
 ## PID sliders
 
-Implements Betaflight 4.5's actual master-slider formula (Master P/I/D,
-Roll/Pitch ratio, Response, Damping, Stability, separate Roll/Pitch/Yaw FF) in
-`pidSliders.lua`, converting to/from the raw per-axis P/I/D/FF values that
-`MSP_SET_PID` transmits. Pinned to the 4.5.x formula as implemented in
-Betaflight firmware source (not documented on the wiki) and isolated so a
-future BF version bump only requires swapping this one file.
+Reads and writes Betaflight 4.5's native simplified-tuning slider fields
+directly via `MSP_SIMPLIFIED_TUNING`/`MSP_SET_SIMPLIFIED_TUNING` — 8 raw U8
+percentage values (master multiplier, roll/pitch ratio, I gain, D gain, PI
+gain, D-min ratio, feedforward gain, pitch PI gain) plus a mode byte. The
+firmware computes the resulting per-axis P/I/D/D-min/F itself; this script
+does not replicate that math. A live preview of the resulting per-axis values
+before saving is possible via `MSP_CALCULATE_SIMPLIFIED_PID` (id 142, computes
+without persisting) but is not required for the MVP.
 
 ## Rates
 
