@@ -13,23 +13,23 @@ local EVT_ROTARY_RIGHT = 0x1004
 
 local M = {}
 
--- Labels match Betaflight Configurator's own "PID Tuning Sliders" screen
--- terminology as closely as space allows (each Configurator slider has a
--- main label plus a subtitle naming the underlying gain(s), e.g.
--- "Damping: D Gains" -> "Damping"):
+-- Labels AND order match Betaflight Configurator's own "PID Tuning Sliders"
+-- screen exactly (each Configurator slider has a main label plus a subtitle
+-- naming the underlying gain(s), e.g. "Damping: D Gains" -> "Damping"):
 --   Damping (D Gains), Tracking (P & I Gains), Stick Response (FF Gains),
+--   -- separator --
 --   Dynamic Damping (D Max), Drift - Wobble (I Gains),
 --   Pitch Damping (Pitch:Roll D), Pitch Tracking (Pitch:Roll P, I & FF),
 --   Master Multiplier
 local SLIDERS = {
-    { key = "masterMultiplier", label = "Master" },
-    { key = "rollPitchRatio", label = "Pitch Damp" },
-    { key = "iGain", label = "Drift-Wob" },
     { key = "dGain", label = "Damping" },
     { key = "piGain", label = "Tracking" },
-    { key = "dminRatio", label = "Dyn Damp" },
     { key = "feedforwardGain", label = "Stick Rsp" },
+    { key = "dminRatio", label = "Dyn Damp" },
+    { key = "iGain", label = "Drift-Wob" },
+    { key = "rollPitchRatio", label = "Pitch Damp" },
     { key = "pitchPiGain", label = "Pitch Trk" },
+    { key = "masterMultiplier", label = "Master" },
 }
 local SLIDER_MIN, SLIDER_MAX = 0, 250
 
