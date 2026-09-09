@@ -5,13 +5,24 @@ An EdgeTX Tools LUA script for reading and writing Betaflight 4.5.x settings
 VTX config) over MSP-over-CRSF telemetry, without needing a USB connection to
 Betaflight Configurator.
 
-Built for a Jumper T15 (EdgeTX 2.9+, color LCD) linked via ExpressLRS.
+Originally built for and verified on a Jumper T15 (EdgeTX 2.9+, 480x272
+color touchscreen). The layout uses no hardcoded screen-size numbers and
+sizes its chrome (footer, tab bar, arm-lock banner) from the radio's actual
+`LCD_W`/`LCD_H`, so it should also work on other EdgeTX color-screen radios
+of 480px width and 272px height or larger -- including RadioMaster's
+480x320+ color radios -- without any changes, though those haven't been
+hardware-tested by this project yet. A touchscreen is used for all editing,
+but its absence is handled gracefully: every touch-input code path is nil-
+guarded, so on a non-touch radio the script still loads and displays live
+FC data correctly; only editing values requires a touchscreen for now.
 
 ## Requirements
 
-- EdgeTX 2.9 or later, color LCD radio
+- EdgeTX 2.9 or later, color LCD radio, 480px wide x 272px tall or larger
 - ExpressLRS (CRSF) link with MSP-over-telemetry enabled
 - Betaflight 4.5.x flight controller firmware
+- A touchscreen, to edit values (the script runs and displays data without
+  one, but editing is touch-only for now)
 
 ## Installation
 
