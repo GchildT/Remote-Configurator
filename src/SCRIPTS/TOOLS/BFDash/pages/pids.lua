@@ -114,11 +114,21 @@ local function pumpPreview(session, state, nowMs)
             local cmd, payload = session:result()
             if cmd == mspMsgs.CMD.CALCULATE_SIMPLIFIED_PID then
                 previewValues = mspMsgs.decodeSimplifiedPidPreview(payload)
+            else
+                -- Response belonged to a different in-flight request on this
+                -- shared session (see module comment above). Our request was
+                -- never actually answered -- retry it, or the preview would
+                -- be stuck showing stale/empty values forever.
+                previewDirty = true
             end
             previewPhase = "idle"
         elseif status == "timeout" or status == "error" then
             session:reset()
             previewPhase = "idle"
+            -- Must retry: without this, a single dropped/late response
+            -- permanently blanks the preview, since nothing else would ever
+            -- mark it dirty again.
+            previewDirty = true
         end
     elseif previewDirty and not session:isPending() then
         local values = state:get("pids")
