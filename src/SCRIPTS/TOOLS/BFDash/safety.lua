@@ -17,12 +17,12 @@ function Tracker:feedFlightModeFrame(data)
         return
     end
     local ok, text = pcall(function()
-        return data:match("^[^%z]*") or data -- strip trailing null terminator(s)
+        return string.match(data, "^[^%z]*") or data -- strip trailing null terminator(s)
     end)
     if not ok or type(text) ~= "string" then
         return
     end
-    local endsWithStar = text:sub(-1) == "*"
+    local endsWithStar = string.sub(text, -1) == "*"
     self.armed = not endsWithStar
     self.stale = false
 end

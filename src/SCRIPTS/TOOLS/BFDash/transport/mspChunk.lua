@@ -4,7 +4,8 @@
 -- and integer-division below is written as portable arithmetic instead:
 -- `math.floor(x)` for floor division, `+` for OR-ing disjoint bit fields,
 -- `% (2^n)` for masking the low n bits, and `math.floor(x / 2^n) % 2` for
--- testing a single bit.
+-- testing a single bit. It also does not register the string metatable, so
+-- `string.sub(s, ...)` is used throughout instead of `s:sub(...)`.
 local M = {}
 
 local MSP_VERSION = 2
@@ -34,18 +35,18 @@ function M.buildRequestChunks(cmd, payload)
 
     -- first chunk: header (minus status byte) + as much payload as fits
     local firstPayloadRoom = CHUNK_MAX - #header
-    local firstPayload = payload:sub(1, firstPayloadRoom)
+    local firstPayload = string.sub(payload, 1, firstPayloadRoom)
     -- STATUS_START_MASK (bit 4), the shifted version (bits 5-6), and the
     -- masked seq (bits 0-3) never overlap, so OR-ing them is addition.
     local status = STATUS_START_MASK + (MSP_VERSION * (2 ^ STATUS_VERSION_SHIFT)) + (seq % (STATUS_SEQ_MASK + 1))
-    table.insert(chunks, string.char(status) .. header:sub(2) .. firstPayload)
+    table.insert(chunks, string.char(status) .. string.sub(header, 2) .. firstPayload)
 
-    local remaining = payload:sub(firstPayloadRoom + 1)
+    local remaining = string.sub(payload, firstPayloadRoom + 1)
     while #remaining > 0 do
         seq = seq + 1
         local room = CHUNK_MAX - 1 -- 1 byte for status
-        local piece = remaining:sub(1, room)
-        remaining = remaining:sub(room + 1)
+        local piece = string.sub(remaining, 1, room)
+        remaining = string.sub(remaining, room + 1)
         local contStatus = (MSP_VERSION * (2 ^ STATUS_VERSION_SHIFT)) + (seq % (STATUS_SEQ_MASK + 1))
         table.insert(chunks, string.char(contStatus) .. piece)
     end
@@ -77,7 +78,7 @@ function Assembler:feed(chunk)
         self.isError = hasBit(status, STATUS_ERROR_MASK)
         self.cmd = string.byte(chunk, 3) + string.byte(chunk, 4) * 256
         self.expectedSize = string.byte(chunk, 5) + string.byte(chunk, 6) * 256
-        self.buf = chunk:sub(7)
+        self.buf = string.sub(chunk, 7)
         self.started = true
         self.lastSeq = seq
     else
@@ -90,11 +91,11 @@ function Assembler:feed(chunk)
             error("out-of-sequence MSP chunk: expected seq " .. expectedSeq .. ", got " .. seq)
         end
         self.lastSeq = seq
-        self.buf = self.buf .. chunk:sub(2)
+        self.buf = self.buf .. string.sub(chunk, 2)
     end
 
     if #self.buf >= self.expectedSize then
-        self.buf = self.buf:sub(1, self.expectedSize)
+        self.buf = string.sub(self.buf, 1, self.expectedSize)
         self.complete = true
         self.started = false
     end

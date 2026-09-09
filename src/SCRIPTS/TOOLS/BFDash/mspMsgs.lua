@@ -66,7 +66,7 @@ function M.decodeApiVersion(payload)
 end
 
 function M.decodeFcVariant(payload)
-    return payload:sub(1, 4)
+    return string.sub(payload, 1, 4)
 end
 
 function M.isBetaflight(variantString)
