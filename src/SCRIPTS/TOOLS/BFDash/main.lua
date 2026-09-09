@@ -549,3 +549,11 @@ function run(event, touchState)
 
     drawFooter(armed)
 end
+
+-- EdgeTX's script loader requires the top-level chunk to return a table with
+-- a `run` field (required) and optionally `init`/`background` -- defining
+-- these as bare globals is NOT sufficient; the loader marks the script
+-- SCRIPT_SYNTAX_ERROR ("The script did not return a table") and never calls
+-- run() at all, which is why nothing appeared on screen. Confirmed against
+-- EdgeTX firmware source (radio/src/lua/interface.cpp).
+return { init = init, run = run }
