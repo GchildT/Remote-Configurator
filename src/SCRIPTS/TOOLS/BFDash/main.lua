@@ -68,6 +68,126 @@ function init()
     checkConnection()
 end
 
+local FOOTER_Y = LCD_H - 40
+local saveFlow = "idle" -- idle | saving | eeprom | done
+
+local function drawFooter(armed)
+    if armed then
+        return
+    end
+    lcd.drawFilledRectangle(0, FOOTER_Y, 100, 40, GREEN)
+    lcd.drawText(10, FOOTER_Y + 12, "Save")
+    lcd.drawFilledRectangle(110, FOOTER_Y, 100, 40, GREY)
+    lcd.drawText(120, FOOTER_Y + 12, "Cancel")
+
+    if app.state:isAnyDirty() then
+        lcd.drawText(220, FOOTER_Y + 12, "* unsaved changes")
+    end
+end
+
+local function handleFooterTouch(touchState)
+    if not touchState or not touchState.tap then
+        return
+    end
+    local tx, ty = touchState.x, touchState.y
+    if ty < FOOTER_Y or ty > FOOTER_Y + 40 then
+        return
+    end
+    if tx >= 0 and tx <= 100 and app.state:isAnyDirty() and saveFlow == "idle" then
+        saveFlow = "saving"
+    elseif tx >= 110 and tx <= 210 then
+        for _, key in ipairs({ "pids", "rates", "filters", "vtx" }) do
+            app.state:reload(key)
+        end
+    end
+end
+
+-- Profile-slot selector: a row of three tappable "1"/"2"/"3" labels below the
+-- tab bar. Switching slots issues two separate MSP_SELECT_SETTING requests
+-- (one for the PID profile, one for the rate profile) sequenced through the
+-- single-request-at-a-time msp session, then invalidates all four cached
+-- state keys so each page's update() re-fetches fresh data for the new slot.
+local PROFILE_Y = 44
+local PROFILE_ROW_H = 16
+local PROFILE_BOX_W = 30
+local PROFILE_BOX_GAP = 6
+local PROFILE_BOX_X0 = 60
+
+local profileFlow = "idle" -- idle | selectPid | selectRate
+local pendingSlot = nil
+
+local function clearCachedState()
+    for _, key in ipairs({ "pids", "rates", "filters", "vtx" }) do
+        app.state.staged[key] = nil
+        app.state.clean[key] = nil
+    end
+end
+
+local function drawProfileRow(armed)
+    if armed then
+        return
+    end
+    lcd.drawText(4, PROFILE_Y, "Profile:")
+    for i = 1, 3 do
+        local x = PROFILE_BOX_X0 + (i - 1) * (PROFILE_BOX_W + PROFILE_BOX_GAP)
+        local isActive = (i == app.profileSlot)
+        lcd.drawFilledRectangle(x, PROFILE_Y, PROFILE_BOX_W, PROFILE_ROW_H, isActive and BLUE or GREY)
+        lcd.drawText(x + 10, PROFILE_Y, tostring(i))
+    end
+end
+
+local function handleProfileTouch(touchState, armed)
+    if armed or not touchState or not touchState.tap then
+        return
+    end
+    if saveFlow ~= "idle" or profileFlow ~= "idle" then
+        return
+    end
+    if app.state:isAnyDirty() then
+        return -- avoid silently discarding unsaved edits when switching slots
+    end
+    local tx, ty = touchState.x, touchState.y
+    if ty < PROFILE_Y or ty > PROFILE_Y + PROFILE_ROW_H then
+        return
+    end
+    for i = 1, 3 do
+        local x = PROFILE_BOX_X0 + (i - 1) * (PROFILE_BOX_W + PROFILE_BOX_GAP)
+        if tx >= x and tx <= x + PROFILE_BOX_W and i ~= app.profileSlot then
+            pendingSlot = i
+            app.session:request(mspMsgs.CMD.SELECT_SETTING, mspMsgs.encodeSelectSetting("pid", i - 1))
+            profileFlow = "selectPid"
+            return
+        end
+    end
+end
+
+local function pumpProfileFlow(nowMs)
+    if profileFlow == "selectPid" then
+        local status = app.session:poll(nowMs)
+        if status == "done" then
+            app.session:request(mspMsgs.CMD.SELECT_SETTING, mspMsgs.encodeSelectSetting("rate", pendingSlot - 1))
+            profileFlow = "selectRate"
+        elseif status == "timeout" or status == "error" then
+            profileFlow = "idle"
+            pendingSlot = nil
+        end
+        return true
+    elseif profileFlow == "selectRate" then
+        local status = app.session:poll(nowMs)
+        if status == "done" then
+            app.profileSlot = pendingSlot
+            clearCachedState()
+            profileFlow = "idle"
+            pendingSlot = nil
+        elseif status == "timeout" or status == "error" then
+            profileFlow = "idle"
+            pendingSlot = nil
+        end
+        return true
+    end
+    return false
+end
+
 function run(event, touchState)
     local nowMs = getTime() * 10
     pumpTelemetry(nowMs)
@@ -94,12 +214,12 @@ function run(event, touchState)
         return
     end
 
-    if app.arm:isArmed() then
+    local armed = app.arm:isArmed()
+    if armed then
         lcd.drawFilledRectangle(0, 0, LCD_W, 20, RED)
         lcd.drawText(10, 4, "ARMED -- read only", WHITE)
     end
 
-    -- tab bar
     for i, name in ipairs(pageNames) do
         local x = (i - 1) * (LCD_W // #pageNames)
         local w = LCD_W // #pageNames
@@ -107,9 +227,45 @@ function run(event, touchState)
             lcd.drawFilledRectangle(x, 20, w, 24, BLUE)
         end
         lcd.drawText(x + 8, 24, name)
+        if not armed and touchState and touchState.tap
+            and touchState.y >= 20 and touchState.y <= 44
+            and touchState.x >= x and touchState.x < x + w then
+            app.activeTab = i
+        end
     end
 
+    drawProfileRow(armed)
+
     local activePage = pages[app.activeTab]
-    activePage.update(app.state, app.arm:isArmed())
-    activePage.event(event, touchState, app.state, app.session, nowMs, app.arm:isArmed())
+
+    if saveFlow == "saving" then
+        activePage.beginSave(app.session, app.state)
+        saveFlow = "eeprom"
+    elseif saveFlow == "eeprom" then
+        local status = app.session:poll(nowMs)
+        if status == "done" then
+            app.state:markClean("pids")
+            app.state:markClean("rates")
+            app.state:markClean("filters")
+            app.state:markClean("vtx")
+            app.session:request(mspMsgs.CMD.EEPROM_WRITE, "")
+            saveFlow = "done"
+        elseif status == "timeout" or status == "error" then
+            saveFlow = "idle" -- Save failed; state stays dirty, footer still shows unsaved changes
+        end
+    elseif saveFlow == "done" then
+        local status = app.session:poll(nowMs)
+        if status == "done" or status == "timeout" or status == "error" then
+            saveFlow = "idle"
+        end
+    elseif pumpProfileFlow(nowMs) then
+        -- profile-slot switch in progress; skip page update/event this tick
+    else
+        activePage.update(app.state, armed)
+        activePage.event(event, touchState, app.state, app.session, nowMs, armed)
+    end
+
+    drawFooter(armed)
+    handleFooterTouch(touchState)
+    handleProfileTouch(touchState, armed)
 end
