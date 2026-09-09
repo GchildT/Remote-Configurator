@@ -215,6 +215,15 @@ local function pumpSaveFlow(nowMs)
         return false
     end
 
+    if app.arm:isArmed() then
+        -- The pilot armed mid-save: cancel whatever MSP request is in flight
+        -- and abort the queue the same way a timeout/error would, without
+        -- marking any key clean.
+        app.session:reset()
+        failSave("Save aborted: armed.")
+        return true
+    end
+
     if saveFlow == "sending" then
         saveIndex = saveIndex + 1
         local key = saveQueue[saveIndex]
