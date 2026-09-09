@@ -20,8 +20,8 @@ local COLOR_GREY = lcd.RGB(130, 130, 130)
 -- script is confirmed loading cleanly on real hardware.
 local msp, mspMsgs, stateMod, safety
 local pidsPage, ratesPage, filtersPage, vtxPage
-local CRSF_FRAMETYPE_MSP_RESP, CRSF_FRAMETYPE_FLIGHT_MODE
-local FLIGHT_MODE_STALE_MS, REQUEST_TIMEOUT_MS
+local CRSF_FRAMETYPE_MSP_RESP
+local REQUEST_TIMEOUT_MS
 local SUPPORTED_MAJOR, SUPPORTED_MINOR
 local pages, pageNames, pageKeys, pageByKey, SET_CMD_BY_KEY
 local app
@@ -41,8 +41,6 @@ local setupOk, setupErr = pcall(function()
     vtxPage = include("pages/vtx.lua")
 
     CRSF_FRAMETYPE_MSP_RESP = 0x7B
-    CRSF_FRAMETYPE_FLIGHT_MODE = 0x21
-    FLIGHT_MODE_STALE_MS = 3000
     REQUEST_TIMEOUT_MS = 800
 
     -- Every byte offset in this project is pinned to Betaflight 4.5.x firmware
@@ -72,7 +70,6 @@ local setupOk, setupErr = pcall(function()
         session = msp.new(REQUEST_TIMEOUT_MS),
         arm = safety.new(),
         state = stateMod.new(),
-        lastFlightModeMs = 0,
         profileSlot = 1,
     }
 end)
@@ -103,9 +100,9 @@ local BTN_SAVE_X, BTN_SAVE_W = 0, 100
 local BTN_CANCEL_X, BTN_CANCEL_W = 110, 100
 
 -- Single shared CRSF pop loop: dispatches MSP_RESP frames to the active
--- session via session:feed(), and FLIGHT_MODE frames to the arm tracker.
--- msp.lua deliberately never calls crossfireTelemetryPop() itself (see
--- Task 3's note) so this is the only consumer of the telemetry queue.
+-- session via session:feed(). msp.lua deliberately never calls
+-- crossfireTelemetryPop() itself (see Task 3's note) so this is the only
+-- consumer of the telemetry queue.
 --
 -- crossfireTelemetryPop() returns TWO values -- command (number), packet
 -- (table of byte values) -- not a single table with .command/.data fields,
@@ -114,7 +111,17 @@ local BTN_CANCEL_X, BTN_CANCEL_W = 110, 100
 -- packets additionally carry a 2-byte CRSF [destination][origin] prefix
 -- (confirmed against Betaflight source, telemetry/crsf.c) that
 -- msp.responseTableToChunkString strips before handing the rest to
--- session:feed(); FLIGHT_MODE frames carry no such prefix.
+-- session:feed().
+--
+-- Arm status does NOT come through this queue: confirmed against EdgeTX
+-- firmware source (radio/src/telemetry/crossfire.cpp) that CRSF FLIGHT_MODE
+-- (0x21) frames are consumed entirely by EdgeTX's own sensor decoder (into
+-- a built-in "FM" text sensor, radio/src/telemetry/sensor_names.h) and never
+-- forwarded to the Lua crossfireTelemetryPop() queue at all -- unlike MSP,
+-- which has its own separate, always-forwarded queue. So arm status is read
+-- via EdgeTX's own decoded sensor with getValue("FM") instead (see
+-- pumpArmStatus below), confirmed to return a Lua string for UNIT_TEXT
+-- sensors (radio/src/lua/api_general.cpp: luaGetValueAndPush).
 local function pumpTelemetry(nowMs)
     while true do
         local command, packet = crossfireTelemetryPop()
@@ -123,12 +130,20 @@ local function pumpTelemetry(nowMs)
         end
         if command == CRSF_FRAMETYPE_MSP_RESP then
             app.session:feed(msp.responseTableToChunkString(packet))
-        elseif command == CRSF_FRAMETYPE_FLIGHT_MODE then
-            app.arm:feedFlightModeFrame(msp.tableToString(packet))
-            app.lastFlightModeMs = nowMs
         end
     end
-    if nowMs - app.lastFlightModeMs > FLIGHT_MODE_STALE_MS then
+end
+
+-- getValue("FM") returns the flight-mode text as a string when telemetry is
+-- streaming, or the number 0 when it isn't (radio/src/lua/api_general.cpp).
+-- feedFlightModeFrame already ignores non-string input safely, but we also
+-- explicitly mark stale on that path so the fail-safe re-engages promptly if
+-- telemetry drops out, rather than latching onto the last-seen value forever.
+local function pumpArmStatus()
+    local fm = getValue("FM")
+    if type(fm) == "string" then
+        app.arm:feedFlightModeFrame(fm)
+    else
         app.arm:markStale()
     end
 end
@@ -522,6 +537,7 @@ end
 local function runBody(event, touchState)
     local nowMs = getTime() * 10
     pumpTelemetry(nowMs)
+    pumpArmStatus()
 
     if app.connection == "connecting" then
         pumpConnection(nowMs)
