@@ -5,6 +5,11 @@ local mspBuffer = loadScript and assert(loadScript("/SCRIPTS/TOOLS/BFDash/transp
 local COLOR_WHITE = lcd.RGB(255, 255, 255)
 local COLOR_BLUE = lcd.RGB(40, 110, 220)
 local COLOR_GREY = lcd.RGB(130, 130, 130)
+local COLOR_YELLOW = lcd.RGB(255, 210, 0)
+
+-- Confirmed against EdgeTX firmware source (radio/src/keys.h).
+local EVT_ROTARY_LEFT = 0x1003
+local EVT_ROTARY_RIGHT = 0x1004
 
 local M = {}
 
@@ -29,6 +34,7 @@ local SLIDER_H = 18
 local SLIDER_X, SLIDER_W = 140, 300
 
 local phase = "idle" -- idle | loading | ready
+local focusedIndex = nil -- index into SLIDERS of the currently jog-dial-editable slider, or nil
 
 local function decodeIntoState(state, rawBuffer)
     local values = { rawBuffer = rawBuffer }
@@ -40,6 +46,7 @@ end
 
 function M.create()
     phase = "idle"
+    focusedIndex = nil
 end
 
 function M.update(state, armed)
@@ -90,22 +97,32 @@ function M.event(event, touchState, state, session, nowMs, armed)
         return
     end
 
+    -- Jog-dial adjusts whichever slider is currently focused (tapped). Tapping
+    -- a slider toggles its focus; tapping a different one moves focus there.
+    if not armed and focusedIndex ~= nil and (event == EVT_ROTARY_LEFT or event == EVT_ROTARY_RIGHT) then
+        local delta = (event == EVT_ROTARY_RIGHT) and 1 or -1
+        local s = SLIDERS[focusedIndex]
+        local values = state:get("pids")
+        local newValue = values[s.key] + delta
+        newValue = math.max(SLIDER_MIN, math.min(SLIDER_MAX, newValue))
+        state:setField("pids", s.key, newValue)
+    end
+
     local values = state:get("pids")
     for i, s in ipairs(SLIDERS) do
         local y = ROW_TOP + (i - 1) * ROW_HEIGHT
-        lcd.drawText(10, y, s.label, COLOR_WHITE)
+        local isFocused = (focusedIndex == i)
+        lcd.drawText(10, y, s.label, isFocused and COLOR_YELLOW or COLOR_WHITE)
         local value = values[s.key]
         local pct = (value - SLIDER_MIN) / (SLIDER_MAX - SLIDER_MIN)
-        lcd.drawRectangle(SLIDER_X, y, SLIDER_W, SLIDER_H, COLOR_WHITE)
+        lcd.drawRectangle(SLIDER_X, y, SLIDER_W, SLIDER_H, isFocused and COLOR_YELLOW or COLOR_WHITE)
         lcd.drawFilledRectangle(SLIDER_X, y, math.floor(SLIDER_W * pct), SLIDER_H, armed and COLOR_GREY or COLOR_BLUE)
-        lcd.drawText(SLIDER_X + SLIDER_W + 10, y, tostring(value), COLOR_WHITE)
+        lcd.drawText(SLIDER_X + SLIDER_W + 10, y, tostring(value), isFocused and COLOR_YELLOW or COLOR_WHITE)
 
         if not armed and touchState then
             local tx, ty = touchState.x, touchState.y
             if tx >= SLIDER_X and tx <= SLIDER_X + SLIDER_W and ty >= y and ty < y + SLIDER_H then
-                local newPct = (tx - SLIDER_X) / SLIDER_W
-                local newValue = math.floor(SLIDER_MIN + newPct * (SLIDER_MAX - SLIDER_MIN))
-                state:setField("pids", s.key, newValue)
+                focusedIndex = isFocused and nil or i
             end
         end
     end

@@ -3,6 +3,11 @@ local mspBuffer = loadScript and assert(loadScript("/SCRIPTS/TOOLS/BFDash/transp
 
 -- Explicit RGB colors rather than named constants -- see main.lua's note.
 local COLOR_WHITE = lcd.RGB(255, 255, 255)
+local COLOR_YELLOW = lcd.RGB(255, 210, 0)
+
+-- Confirmed against EdgeTX firmware source (radio/src/keys.h).
+local EVT_ROTARY_LEFT = 0x1003
+local EVT_ROTARY_RIGHT = 0x1004
 
 local M = {}
 
@@ -33,6 +38,7 @@ local ROW_TOP = 86
 local VALUE_X = 220
 
 local phase = "idle"
+local focusedIndex = nil -- index into ROWS of the currently jog-dial-editable field, or nil
 
 local function decodeIntoState(state, rawBuffer)
     local values = { rawBuffer = rawBuffer }
@@ -45,6 +51,7 @@ end
 
 function M.create()
     phase = "idle"
+    focusedIndex = nil
 end
 
 function M.update(state, armed)
@@ -99,19 +106,25 @@ function M.event(event, touchState, state, session, nowMs, armed)
         end
     end
 
+    -- Jog-dial adjusts whichever field is currently focused (tapped).
+    if not armed and focusedIndex ~= nil and (event == EVT_ROTARY_LEFT or event == EVT_ROTARY_RIGHT) then
+        local delta = (event == EVT_ROTARY_RIGHT) and 1 or -1
+        local r = ROWS[focusedIndex]
+        local newValue = values[r.key] + delta
+        newValue = math.max(0, math.min(255, newValue))
+        state:setField("rates", r.key, newValue)
+    end
+
     for i, r in ipairs(ROWS) do
         local y = ROW_TOP + (i - 1) * ROW_HEIGHT
-        lcd.drawText(10, y, r.label, COLOR_WHITE)
-        lcd.drawText(VALUE_X, y, tostring(values[r.key]), COLOR_WHITE)
+        local isFocused = (focusedIndex == i)
+        lcd.drawText(10, y, r.label, isFocused and COLOR_YELLOW or COLOR_WHITE)
+        lcd.drawText(VALUE_X, y, tostring(values[r.key]), isFocused and COLOR_YELLOW or COLOR_WHITE)
 
         if not armed and touchState then
             local tx, ty = touchState.x, touchState.y
-            if ty >= y and ty < y + ROW_HEIGHT then
-                if tx >= VALUE_X + 40 and tx <= VALUE_X + 60 then
-                    state:setField("rates", r.key, math.max(0, values[r.key] - 1))
-                elseif tx >= VALUE_X + 65 and tx <= VALUE_X + 85 then
-                    state:setField("rates", r.key, math.min(255, values[r.key] + 1))
-                end
+            if ty >= y and ty < y + ROW_HEIGHT and tx >= VALUE_X and tx < VALUE_X + 100 then
+                focusedIndex = isFocused and nil or i
             end
         end
     end

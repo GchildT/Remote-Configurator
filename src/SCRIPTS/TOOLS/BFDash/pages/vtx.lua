@@ -2,24 +2,34 @@ local mspMsgs = loadScript and assert(loadScript("/SCRIPTS/TOOLS/BFDash/mspMsgs.
 
 -- Explicit RGB colors rather than named constants -- see main.lua's note.
 local COLOR_WHITE = lcd.RGB(255, 255, 255)
+local COLOR_YELLOW = lcd.RGB(255, 210, 0)
+
+-- Confirmed against EdgeTX firmware source (radio/src/keys.h).
+local EVT_ROTARY_LEFT = 0x1003
+local EVT_ROTARY_RIGHT = 0x1004
 
 local M = {}
 
 local BAND_NAMES = { "A", "B", "E", "F", "R" }
 local POWER_MIN, POWER_MAX = 1, 5
+local FIELD_RANGE = {
+    band = { min = 1, max = #BAND_NAMES },
+    channel = { min = 1, max = 8 },
+    power = { min = POWER_MIN, max = POWER_MAX },
+}
 
 -- Layout: content starts at y=66, below the tab bar + profile row (which end at
 -- y=64). Three 20px rows at 70/100/130 stay clear of the footer at 232.
 local CONTENT_TOP = 66
 local ROW_H = 20
 local BAND_Y, CHANNEL_Y, POWER_Y = 70, 100, 130
-local DEC_X, DEC_W = 150, 20
-local INC_X, INC_W = 175, 20
 
 local phase = "idle"
+local focusedField = nil -- "band" | "channel" | "power" | nil, jog-dial-editable
 
 function M.create()
     phase = "idle"
+    focusedField = nil
 end
 
 function M.update(state, armed)
@@ -67,31 +77,32 @@ function M.event(event, touchState, state, session, nowMs, armed)
     end
 
     local values = state:get("vtx")
-    lcd.drawText(10, BAND_Y, "Band: " .. (BAND_NAMES[values.band] or tostring(values.band)), COLOR_WHITE)
-    lcd.drawText(10, CHANNEL_Y, "Channel: " .. tostring(values.channel), COLOR_WHITE)
-    lcd.drawText(10, POWER_Y, "Power: " .. tostring(values.power), COLOR_WHITE)
+
+    -- Jog-dial adjusts whichever field is currently focused (tapped).
+    if not armed and focusedField ~= nil and (event == EVT_ROTARY_LEFT or event == EVT_ROTARY_RIGHT) then
+        local delta = (event == EVT_ROTARY_RIGHT) and 1 or -1
+        local range = FIELD_RANGE[focusedField]
+        local newValue = values[focusedField] + delta
+        newValue = math.max(range.min, math.min(range.max, newValue))
+        state:setField("vtx", focusedField, newValue)
+    end
+
+    local bandFocused = (focusedField == "band")
+    local channelFocused = (focusedField == "channel")
+    local powerFocused = (focusedField == "power")
+    lcd.drawText(10, BAND_Y, "Band: " .. (BAND_NAMES[values.band] or tostring(values.band)), bandFocused and COLOR_YELLOW or COLOR_WHITE)
+    lcd.drawText(10, CHANNEL_Y, "Channel: " .. tostring(values.channel), channelFocused and COLOR_YELLOW or COLOR_WHITE)
+    lcd.drawText(10, POWER_Y, "Power: " .. tostring(values.power), powerFocused and COLOR_YELLOW or COLOR_WHITE)
 
     if not armed and touchState then
         local tx, ty = touchState.x, touchState.y
-        local dec = tx >= DEC_X and tx < DEC_X + DEC_W
-        local inc = tx >= INC_X and tx < INC_X + INC_W
-        if ty >= BAND_Y and ty < BAND_Y + ROW_H then
-            if dec then
-                state:setField("vtx", "band", math.max(1, values.band - 1))
-            elseif inc then
-                state:setField("vtx", "band", math.min(#BAND_NAMES, values.band + 1))
-            end
-        elseif ty >= CHANNEL_Y and ty < CHANNEL_Y + ROW_H then
-            if dec then
-                state:setField("vtx", "channel", math.max(1, values.channel - 1))
-            elseif inc then
-                state:setField("vtx", "channel", math.min(8, values.channel + 1))
-            end
-        elseif ty >= POWER_Y and ty < POWER_Y + ROW_H then
-            if dec then
-                state:setField("vtx", "power", math.max(POWER_MIN, values.power - 1))
-            elseif inc then
-                state:setField("vtx", "power", math.min(POWER_MAX, values.power + 1))
+        if tx >= 10 and tx < 250 then
+            if ty >= BAND_Y and ty < BAND_Y + ROW_H then
+                focusedField = bandFocused and nil or "band"
+            elseif ty >= CHANNEL_Y and ty < CHANNEL_Y + ROW_H then
+                focusedField = channelFocused and nil or "channel"
+            elseif ty >= POWER_Y and ty < POWER_Y + ROW_H then
+                focusedField = powerFocused and nil or "power"
             end
         end
     end
