@@ -22,7 +22,7 @@ local msp, mspMsgs, stateMod, safety
 local pidsPage, ratesPage, filtersPage, vtxPage
 local CRSF_FRAMETYPE_MSP_RESP
 local REQUEST_TIMEOUT_MS
-local SUPPORTED_MAJOR, SUPPORTED_MINOR
+local MIN_API_MAJOR, MIN_API_MINOR
 local pages, pageNames, pageKeys, pageByKey, SET_CMD_BY_KEY
 local app
 
@@ -43,10 +43,13 @@ local setupOk, setupErr = pcall(function()
     CRSF_FRAMETYPE_MSP_RESP = 0x7B
     REQUEST_TIMEOUT_MS = 800
 
-    -- Every byte offset in this project is pinned to Betaflight 4.5.x firmware
-    -- source. Writing those offsets to a different minor version could land in
-    -- the wrong fields, so the connection check gates on the FC version too.
-    SUPPORTED_MAJOR, SUPPORTED_MINOR = 4, 5
+    -- Minimum MSP API version this project's byte offsets are verified
+    -- against (see the connection-check comment below for the full
+    -- explanation of why this is an API-version gate, not a firmware-version
+    -- gate). MSP_SIMPLIFIED_TUNING ("Added in MSP API 1.44") is the newest
+    -- message used here, making 1.44 the true floor; confirmed unchanged
+    -- through API 1.48 (Betaflight 2026.6.1).
+    MIN_API_MAJOR, MIN_API_MINOR = 1, 44
 
     pages = { pidsPage, ratesPage, filtersPage, vtxPage }
     pageNames = { "PIDs", "Rates", "Filters", "VTX" }
@@ -149,11 +152,29 @@ local function pumpArmStatus()
 end
 
 --------------------------------------------------------------------------------
--- Connection check: MSP_FC_VARIANT (is it Betaflight?) then MSP_FC_VERSION
--- (is it a version whose MSP field offsets match the ones we hard-code?).
+-- Connection check: MSP_FC_VARIANT (is it Betaflight?) then MSP_API_VERSION.
+--
+-- Gates on the MSP *protocol* version, not the human-facing firmware version
+-- string. This matters because Betaflight switched from "4.x.y" versioning
+-- to calendar versioning ("2026.6.1") at some point after 4.5.x -- a user
+-- hit exactly this connecting an FC on the new scheme, which broke the old
+-- major==4/minor==5 firmware-version gate outright (MSP_FC_VERSION's 3
+-- single-byte fields can't even represent a 4-digit year; Betaflight source,
+-- src/main/msp/msp.c, now sends year-2000/month/patch instead of
+-- major/minor/patch there). The MSP API version is a different, more stable
+-- number Betaflight itself uses to track when individual MSP fields were
+-- introduced -- every message this project depends on has been byte-for-byte
+-- unchanged since MSP API 1.44 (confirmed directly against Betaflight
+-- firmware source for both 4.5.5 and 2026.6.1: MSP_SIMPLIFIED_TUNING,
+-- introduced "Added in MSP API 1.44", is the newest message used here, and
+-- every other message's fields this project reads/writes are also present
+-- and byte-identical between those two versions). Gating on the API version
+-- instead is both backward compatible (4.5.3+) and forward compatible with
+-- whatever Betaflight ships next, as long as it doesn't remove or reorder
+-- these specific fields.
 --------------------------------------------------------------------------------
-local connectFlow = "variant" -- variant | version | done
-local fcVersionText = nil
+local connectFlow = "variant" -- variant | apiVersion | done
+local apiVersionText = nil
 
 local function checkConnection()
     connectFlow = "variant"
@@ -166,18 +187,18 @@ local function onConnectionResponse(cmd, payload)
             -- Not our reply; re-ask rather than decoding someone else's payload.
             app.session:request(mspMsgs.CMD.FC_VARIANT, "")
         elseif mspMsgs.isBetaflight(mspMsgs.decodeFcVariant(payload)) then
-            connectFlow = "version"
-            app.session:request(mspMsgs.CMD.FC_VERSION, "")
+            connectFlow = "apiVersion"
+            app.session:request(mspMsgs.CMD.API_VERSION, "")
         else
             app.connection = "unsupported"
         end
-    elseif connectFlow == "version" then
-        if cmd ~= mspMsgs.CMD.FC_VERSION then
-            app.session:request(mspMsgs.CMD.FC_VERSION, "")
+    elseif connectFlow == "apiVersion" then
+        if cmd ~= mspMsgs.CMD.API_VERSION then
+            app.session:request(mspMsgs.CMD.API_VERSION, "")
         else
-            local major, minor, patch = mspMsgs.decodeFcVersion(payload)
-            fcVersionText = tostring(major or "?") .. "." .. tostring(minor or "?") .. "." .. tostring(patch or "?")
-            if major == SUPPORTED_MAJOR and minor == SUPPORTED_MINOR then
+            local mspProtocolVersion, apiMajor, apiMinor = mspMsgs.decodeApiVersion(payload)
+            apiVersionText = tostring(apiMajor or "?") .. "." .. tostring(apiMinor or "?")
+            if apiMajor == MIN_API_MAJOR and apiMinor >= MIN_API_MINOR then
                 connectFlow = "done"
                 app.connection = "connected"
             else
@@ -529,9 +550,9 @@ local function connectionMessage()
     elseif app.connection == "unsupported" then
         return "Connected, but flight controller is not Betaflight."
     elseif app.connection == "unsupported_version" then
-        return "Unsupported firmware " .. tostring(fcVersionText)
-            .. " -- this tool requires Betaflight "
-            .. SUPPORTED_MAJOR .. "." .. SUPPORTED_MINOR .. ".x"
+        return "Unsupported MSP API " .. tostring(apiVersionText)
+            .. " -- this tool requires API "
+            .. MIN_API_MAJOR .. "." .. MIN_API_MINOR .. "+"
     end
     return "No response from flight controller. Check link."
 end
