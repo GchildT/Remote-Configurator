@@ -15,26 +15,48 @@ local M = {}
 
 local SLIDERS = {
     { key = "masterMultiplier", label = "Master" },
-    { key = "rollPitchRatio", label = "Roll/Pitch Ratio" },
+    { key = "rollPitchRatio", label = "R/P Ratio" },
     { key = "iGain", label = "I Gain" },
     { key = "dGain", label = "D Gain" },
     { key = "piGain", label = "PI Gain" },
-    { key = "dminRatio", label = "D-Min Ratio" },
-    { key = "feedforwardGain", label = "Feedforward" },
-    { key = "pitchPiGain", label = "Pitch PI Gain" },
+    { key = "dminRatio", label = "Dmin Rat" },
+    { key = "feedforwardGain", label = "FF Gain" },
+    { key = "pitchPiGain", label = "P.PI Gain" },
 }
 local SLIDER_MIN, SLIDER_MAX = 0, 250
--- Layout: page content lives strictly between the chrome above it (tab bar +
--- profile row, which end at y=64) and the footer below it (starts at y=232 on a
--- 272px-tall screen). 8 rows * 20px = 160px, so rows span y=66..226 -- no
--- geometric overlap with either. See main.lua's layout constants.
+
+-- Split layout: left half is the sliders (adjustable), right half is a live
+-- preview of the actual per-axis P/I/D/D-Min/FF values Betaflight's firmware
+-- would compute from the current slider percentages (via
+-- MSP_CALCULATE_SIMPLIFIED_PID -- confirmed against Betaflight 4.5.5
+-- src/main/msp/msp.c: this computes and returns the result WITHOUT saving
+-- anything, exactly the live-preview semantics needed here).
+--
+-- Layout: content lives strictly between the chrome above (tab bar + profile
+-- row, end at y=64) and the footer below (starts at y=232 on a 272px-tall
+-- screen). 8 slider rows * 20px = 160px, so rows span y=66..226.
 local ROW_HEIGHT = 20
 local ROW_TOP = 66
 local SLIDER_H = 18
-local SLIDER_X, SLIDER_W = 140, 300
+local LABEL_X = 2
+local SLIDER_X, SLIDER_W = 74, 90
+local VALUE_X = 168
+
+local PREVIEW_X = 208
+local PREVIEW_AXIS_X = PREVIEW_X
+local PREVIEW_COL_X = { PREVIEW_X + 22, PREVIEW_X + 70, PREVIEW_X + 118, PREVIEW_X + 166, PREVIEW_X + 214 }
+local PREVIEW_COL_HEADERS = { "P", "I", "D", "Dm", "FF" }
+local PREVIEW_HEADER_Y = ROW_TOP
+local PREVIEW_ROW_Y = { ROW_TOP + 22, ROW_TOP + 44, ROW_TOP + 66 }
+local PREVIEW_AXIS_LABELS = { "R", "P", "Y" }
+local PREVIEW_AXIS_KEYS = { "roll", "pitch", "yaw" }
 
 local phase = "idle" -- idle | loading | ready
 local focusedIndex = nil -- index into SLIDERS of the currently jog-dial-editable slider, or nil
+
+local previewValues = nil -- decoded MSP_CALCULATE_SIMPLIFIED_PID result, or nil before the first fetch
+local previewPhase = "idle" -- idle | pending
+local previewDirty = true -- true when the sliders have changed since the last preview fetch
 
 local function decodeIntoState(state, rawBuffer)
     local values = { rawBuffer = rawBuffer }
@@ -47,6 +69,9 @@ end
 function M.create()
     phase = "idle"
     focusedIndex = nil
+    previewValues = nil
+    previewPhase = "idle"
+    previewDirty = true
 end
 
 function M.update(state, armed)
@@ -69,6 +94,39 @@ local function beginSave(session, state)
 end
 M.beginSave = beginSave
 
+-- Fetches the live PID preview. Shares the session with the page's own load
+-- flow (mutually exclusive via `phase`) and with main.lua's save/profile
+-- flows (those only run activePage.event() when neither is active, and both
+-- check session:isPending() before starting their own requests -- see
+-- transport/msp.lua's Session:request() reentrancy guard).
+local function pumpPreview(session, state, nowMs)
+    if previewPhase == "pending" then
+        local status = session:poll(nowMs)
+        if status == "done" then
+            local cmd, payload = session:result()
+            if cmd == mspMsgs.CMD.CALCULATE_SIMPLIFIED_PID then
+                previewValues = mspMsgs.decodeSimplifiedPidPreview(payload)
+            end
+            previewPhase = "idle"
+        elseif status == "timeout" or status == "error" then
+            session:reset()
+            previewPhase = "idle"
+        end
+    elseif previewDirty and not session:isPending() then
+        local values = state:get("pids")
+        -- Only the first 17 bytes (mode + 8 gains + 8 reserved) matter to
+        -- MSP_CALCULATE_SIMPLIFIED_PID's request format -- confirmed against
+        -- Betaflight 4.5.5 src/main/msp/msp.c: readSimplifiedPids().
+        local buf = string.sub(values.rawBuffer, 1, 17)
+        for _, s in ipairs(SLIDERS) do
+            buf = mspBuffer.writeField(buf, mspMsgs.SIMPLIFIED_TUNING_FIELDS[s.key], values[s.key])
+        end
+        session:request(mspMsgs.CMD.CALCULATE_SIMPLIFIED_PID, buf)
+        previewPhase = "pending"
+        previewDirty = false
+    end
+end
+
 function M.event(event, touchState, state, session, nowMs, armed)
     if phase == "loading" then
         local status = session:poll(nowMs)
@@ -81,6 +139,7 @@ function M.event(event, touchState, state, session, nowMs, armed)
             if cmd == mspMsgs.CMD.SIMPLIFIED_TUNING then
                 decodeIntoState(state, payload)
                 phase = "ready"
+                previewDirty = true
             else
                 phase = "idle" -- not ours; retry cleanly on the next update()
             end
@@ -106,24 +165,47 @@ function M.event(event, touchState, state, session, nowMs, armed)
         local newValue = values[s.key] + delta
         newValue = math.max(SLIDER_MIN, math.min(SLIDER_MAX, newValue))
         state:setField("pids", s.key, newValue)
+        previewDirty = true
+    end
+
+    if not armed then
+        pumpPreview(session, state, nowMs)
     end
 
     local values = state:get("pids")
     for i, s in ipairs(SLIDERS) do
         local y = ROW_TOP + (i - 1) * ROW_HEIGHT
         local isFocused = (focusedIndex == i)
-        lcd.drawText(10, y, s.label, isFocused and COLOR_YELLOW or COLOR_WHITE)
+        lcd.drawText(LABEL_X, y, s.label, isFocused and COLOR_YELLOW or COLOR_WHITE)
         local value = values[s.key]
         local pct = (value - SLIDER_MIN) / (SLIDER_MAX - SLIDER_MIN)
         lcd.drawRectangle(SLIDER_X, y, SLIDER_W, SLIDER_H, isFocused and COLOR_YELLOW or COLOR_WHITE)
         lcd.drawFilledRectangle(SLIDER_X, y, math.floor(SLIDER_W * pct), SLIDER_H, armed and COLOR_GREY or COLOR_BLUE)
-        lcd.drawText(SLIDER_X + SLIDER_W + 10, y, tostring(value), isFocused and COLOR_YELLOW or COLOR_WHITE)
+        lcd.drawText(VALUE_X, y, tostring(value), isFocused and COLOR_YELLOW or COLOR_WHITE)
 
         if not armed and touchState then
             local tx, ty = touchState.x, touchState.y
             if tx >= SLIDER_X and tx <= SLIDER_X + SLIDER_W and ty >= y and ty < y + SLIDER_H then
                 focusedIndex = isFocused and nil or i
             end
+        end
+    end
+
+    for c, header in ipairs(PREVIEW_COL_HEADERS) do
+        lcd.drawText(PREVIEW_COL_X[c], PREVIEW_HEADER_Y, header, COLOR_GREY)
+    end
+    for r, axisLabel in ipairs(PREVIEW_AXIS_LABELS) do
+        local y = PREVIEW_ROW_Y[r]
+        lcd.drawText(PREVIEW_AXIS_X, y, axisLabel, COLOR_WHITE)
+        if previewValues then
+            local axis = previewValues[PREVIEW_AXIS_KEYS[r]]
+            lcd.drawText(PREVIEW_COL_X[1], y, tostring(axis.p), COLOR_WHITE)
+            lcd.drawText(PREVIEW_COL_X[2], y, tostring(axis.i), COLOR_WHITE)
+            lcd.drawText(PREVIEW_COL_X[3], y, tostring(axis.d), COLOR_WHITE)
+            lcd.drawText(PREVIEW_COL_X[4], y, tostring(axis.dMin), COLOR_WHITE)
+            lcd.drawText(PREVIEW_COL_X[5], y, tostring(axis.ff), COLOR_WHITE)
+        else
+            lcd.drawText(PREVIEW_COL_X[1], y, "...", COLOR_GREY)
         end
     end
 end

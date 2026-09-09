@@ -14,6 +14,7 @@ M.CMD = {
     EEPROM_WRITE = 250,
     SIMPLIFIED_TUNING = 140,
     SET_SIMPLIFIED_TUNING = 141,
+    CALCULATE_SIMPLIFIED_PID = 142,
 }
 
 -- Offsets verified against Betaflight 4.5.5 src/main/msp/msp.c
@@ -119,6 +120,29 @@ function M.encodeVtxConfigSet(current)
     out[#out + 1] = string.char(current.band, current.channel)
     out[#out + 1] = string.char(0, 0) -- standalone freq: 0 = derive from band/channel
     return table.concat(out)
+end
+
+-- MSP_CALCULATE_SIMPLIFIED_PID (142) response layout verified against
+-- Betaflight 4.5.5 src/main/msp/msp.c: writePidfs() writes, for each of
+-- XYZ_AXIS_COUNT (3) axes in Roll/Pitch/Yaw order: P(u8), I(u8), D(u8),
+-- d_min(u8), F(u16 LE) -- 6 bytes/axis, 18 bytes total. This is the
+-- firmware's OWN computation of the resulting per-axis PID values from the
+-- current simplified-tuning slider percentages, without saving anything --
+-- used for a live preview while the sliders are being adjusted.
+function M.decodeSimplifiedPidPreview(payload)
+    local axes = {}
+    local order = { "roll", "pitch", "yaw" }
+    for i, name in ipairs(order) do
+        local base = (i - 1) * 6
+        axes[name] = {
+            p = string.byte(payload, base + 1),
+            i = string.byte(payload, base + 2),
+            d = string.byte(payload, base + 3),
+            dMin = string.byte(payload, base + 4),
+            ff = string.byte(payload, base + 5) + string.byte(payload, base + 6) * 256,
+        }
+    end
+    return axes
 end
 
 return M
