@@ -203,7 +203,10 @@ function M.event(event, touchState, state, session, nowMs, armed)
 
         if not armed and touchState then
             local tx, ty = touchState.x, touchState.y
-            if tx >= SLIDER_X and tx <= SLIDER_X + SLIDER_W and ty >= y and ty < y + SLIDER_H then
+            -- Whole row is tappable -- label, slider, and value text alike --
+            -- not just the slider rectangle itself. Right edge stops short of
+            -- the live-preview columns so taps there don't steal focus.
+            if tx >= LABEL_X and tx < PREVIEW_X - 4 and ty >= y and ty < y + ROW_HEIGHT then
                 focusedIndex = isFocused and nil or i
             end
         end
