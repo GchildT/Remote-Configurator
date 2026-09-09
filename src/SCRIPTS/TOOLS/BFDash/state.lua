@@ -57,4 +57,9 @@ function State:markClean(key)
     self.clean[key] = shallowCopy(self.staged[key])
 end
 
+function State:clear(key)
+    self.clean[key] = nil
+    self.staged[key] = nil
+end
+
 return M

@@ -18,6 +18,7 @@ local REQUEST_TIMEOUT_MS = 800
 
 local pages = { pidsPage, ratesPage, filtersPage, vtxPage }
 local pageNames = { "PIDs", "Rates", "Filters", "VTX" }
+local pageKeys = { "pids", "rates", "filters", "vtx" }
 
 local app = {
     activeTab = 1,
@@ -85,7 +86,10 @@ local function drawFooter(armed)
     end
 end
 
-local function handleFooterTouch(touchState)
+local function handleFooterTouch(touchState, armed)
+    if armed then
+        return
+    end
     if not touchState or not touchState.tap then
         return
     end
@@ -96,7 +100,7 @@ local function handleFooterTouch(touchState)
     if tx >= 0 and tx <= 100 and app.state:isAnyDirty() and saveFlow == "idle" then
         saveFlow = "saving"
     elseif tx >= 110 and tx <= 210 then
-        for _, key in ipairs({ "pids", "rates", "filters", "vtx" }) do
+        for _, key in ipairs(pageKeys) do
             app.state:reload(key)
         end
     end
@@ -117,10 +121,17 @@ local profileFlow = "idle" -- idle | selectPid | selectRate
 local pendingSlot = nil
 
 local function clearCachedState()
-    for _, key in ipairs({ "pids", "rates", "filters", "vtx" }) do
-        app.state.staged[key] = nil
-        app.state.clean[key] = nil
+    for _, key in ipairs(pageKeys) do
+        app.state:clear(key)
     end
+    -- state:clear() alone does not make pages reload: each page module only
+    -- re-enters its "loading" phase from a module-local `phase` variable that
+    -- becomes "idle" via that page's own create(). Reset all four explicitly
+    -- so the next update() actually re-fetches fresh data for the new slot.
+    pidsPage.create()
+    ratesPage.create()
+    filtersPage.create()
+    vtxPage.create()
 end
 
 local function drawProfileRow(armed)
@@ -145,6 +156,9 @@ local function handleProfileTouch(touchState, armed)
     end
     if app.state:isAnyDirty() then
         return -- avoid silently discarding unsaved edits when switching slots
+    end
+    if app.session:isPending() then
+        return -- avoid reentrant session:request() while a page's own load is in flight
     end
     local tx, ty = touchState.x, touchState.y
     if ty < PROFILE_Y or ty > PROFILE_Y + PROFILE_ROW_H then
@@ -239,8 +253,16 @@ function run(event, touchState)
     local activePage = pages[app.activeTab]
 
     if saveFlow == "saving" then
-        activePage.beginSave(app.session, app.state)
-        saveFlow = "eeprom"
+        local activeKey = pageKeys[app.activeTab]
+        if app.state:get(activeKey) == nil then
+            -- The active tab hasn't finished loading, so it can't be the tab
+            -- that's actually dirty (a not-yet-loaded page has no edits).
+            -- Abort silently rather than calling beginSave on nil state.
+            saveFlow = "idle"
+        else
+            activePage.beginSave(app.session, app.state)
+            saveFlow = "eeprom"
+        end
     elseif saveFlow == "eeprom" then
         local status = app.session:poll(nowMs)
         if status == "done" then
@@ -266,6 +288,6 @@ function run(event, touchState)
     end
 
     drawFooter(armed)
-    handleFooterTouch(touchState)
+    handleFooterTouch(touchState, armed)
     handleProfileTouch(touchState, armed)
 end

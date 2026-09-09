@@ -75,4 +75,8 @@ function Session:result()
     return self.resultCmd, self.resultPayload, self.resultIsError
 end
 
+function Session:isPending()
+    return self.state == "pending"
+end
+
 return M
