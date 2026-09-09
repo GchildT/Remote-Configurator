@@ -60,6 +60,32 @@ testkit.describe("msp session", function()
         testkit.assertEquals(status, "timeout", "exceeded timeout with no response")
     end)
 
+    testkit.it("feeding a malformed/out-of-sequence chunk degrades to error state, not an uncaught error", function()
+        local msp = freshMsp()
+        local session = msp.new(1000)
+        session:request(1, "")
+        session:poll(0)
+        -- start chunk declares a 10-byte payload, seq 0
+        local startChunk = string.char(0x50, 0, 1, 0, 10, 0) .. "ABCD"
+        local ok1 = pcall(function() session:feed(startChunk) end)
+        testkit.assertTrue(ok1, "start chunk feeds without error")
+        -- skip seq 1, send seq 2 instead -- simulates dropped/reordered chunk
+        local badChunk = string.char(0x02) .. "EFGHIJ"
+        local ok2 = pcall(function() session:feed(badChunk) end)
+        testkit.assertTrue(ok2, "out-of-sequence chunk does not propagate an error out of feed()")
+        testkit.assertEquals(session:poll(10), "error", "session degrades to error state")
+    end)
+
+    testkit.it("request() while a previous request is still pending raises an error", function()
+        local msp = freshMsp()
+        local session = msp.new(1000)
+        session:request(1, "")
+        session:poll(0)
+        testkit.assertEquals(session:poll(0), "pending", "first request still pending")
+        local ok = pcall(function() session:request(2, "") end)
+        testkit.assertTrue(not ok, "request() while pending raises an error")
+    end)
+
     testkit.it("sends a second request only after the first completes", function()
         local msp = freshMsp()
         local session = msp.new(1000)

@@ -20,6 +20,9 @@ function M.new(timeoutMs)
 end
 
 function Session:request(cmd, payload)
+    if self.state == "pending" then
+        error("msp session: request() called while a previous request is still pending")
+    end
     self.outgoing = mspChunk.buildRequestChunks(cmd, payload)
     self.assembler = mspChunk.newAssembler()
     self.startedAtMs = nil
@@ -56,7 +59,11 @@ function Session:feed(data)
     if self.state ~= "pending" then
         return
     end
-    local complete = self.assembler:feed(data)
+    local ok, complete = pcall(function() return self.assembler:feed(data) end)
+    if not ok then
+        self.state = "error"
+        return
+    end
     if complete then
         local cmd, payload, isError = self.assembler:result()
         self.resultCmd, self.resultPayload, self.resultIsError = cmd, payload, isError
