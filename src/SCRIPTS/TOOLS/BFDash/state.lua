@@ -24,6 +24,12 @@ function State:get(key)
 end
 
 function State:setField(key, fieldName, value)
+    -- A key that was never loaded (or was cleared by a profile switch) has no
+    -- staged table; ignore the edit rather than indexing nil. Pages guard this
+    -- already, but a stray tap during a reload window must not crash the tool.
+    if self.staged[key] == nil then
+        return
+    end
     self.staged[key][fieldName] = value
 end
 
@@ -50,10 +56,17 @@ function State:isAnyDirty()
 end
 
 function State:reload(key)
+    -- Cancel iterates all four page keys, including ones never loaded.
+    if self.clean[key] == nil then
+        return
+    end
     self.staged[key] = shallowCopy(self.clean[key])
 end
 
 function State:markClean(key)
+    if self.staged[key] == nil then
+        return
+    end
     self.clean[key] = shallowCopy(self.staged[key])
 end
 

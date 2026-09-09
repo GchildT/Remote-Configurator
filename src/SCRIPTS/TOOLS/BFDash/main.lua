@@ -16,19 +16,61 @@ local CRSF_FRAMETYPE_FLIGHT_MODE = 0x21
 local FLIGHT_MODE_STALE_MS = 3000
 local REQUEST_TIMEOUT_MS = 800
 
+-- Every byte offset in this project is pinned to Betaflight 4.5.x firmware
+-- source. Writing those offsets to a different minor version could land in the
+-- wrong fields, so the connection check gates on the FC version too.
+local SUPPORTED_MAJOR, SUPPORTED_MINOR = 4, 5
+
 local pages = { pidsPage, ratesPage, filtersPage, vtxPage }
 local pageNames = { "PIDs", "Rates", "Filters", "VTX" }
 local pageKeys = { "pids", "rates", "filters", "vtx" }
+local pageByKey = { pids = pidsPage, rates = ratesPage, filters = filtersPage, vtx = vtxPage }
+
+-- The SET command each page's beginSave() issues. Used to validate that a
+-- response actually belongs to the request we just made before treating it as
+-- a successful write (see the msp session's shared-session hazard).
+local SET_CMD_BY_KEY = {
+    pids = mspMsgs.CMD.SET_SIMPLIFIED_TUNING,
+    rates = mspMsgs.CMD.SET_RC_TUNING,
+    filters = mspMsgs.CMD.SET_FILTER_CONFIG,
+    vtx = mspMsgs.CMD.SET_VTX_CONFIG,
+}
 
 local app = {
     activeTab = 1,
-    connection = "connecting", -- connecting | connected | unsupported | disconnected
+    -- connecting | connected | unsupported | unsupported_version | disconnected
+    connection = "connecting",
     session = msp.new(REQUEST_TIMEOUT_MS),
     arm = safety.new(),
     state = stateMod.new(),
     lastFlightModeMs = 0,
     profileSlot = 1,
 }
+
+--------------------------------------------------------------------------------
+-- Layout
+--
+-- 480x272 screen. Regions are laid out so that no two distinct interactive
+-- elements share any pixel, and a tap is additionally consumed by the first
+-- handler that claims it (chrome before page content) as a second line of
+-- defence:
+--
+--   y   0.. 20  armed banner (non-interactive)
+--   y  20.. 44  tab bar
+--   y  44.. 64  profile-slot row
+--   y  66..232  page content (pages own this band; see each page's constants)
+--   y 232..272  footer (Save / Cancel / status)
+--------------------------------------------------------------------------------
+local TAB_Y, TAB_H = 20, 24
+local PROFILE_Y = 44
+local PROFILE_ROW_H = 20
+local PROFILE_BOX_W = 30
+local PROFILE_BOX_GAP = 6
+local PROFILE_BOX_X0 = 60
+local FOOTER_H = 40
+local FOOTER_Y = LCD_H - FOOTER_H
+local BTN_SAVE_X, BTN_SAVE_W = 0, 100
+local BTN_CANCEL_X, BTN_CANCEL_W = 110, 100
 
 -- Single shared CRSF pop loop: dispatches MSP_RESP frames to the active
 -- session via session:feed(), and FLIGHT_MODE frames to the arm tracker.
@@ -52,36 +94,202 @@ local function pumpTelemetry(nowMs)
     end
 end
 
+--------------------------------------------------------------------------------
+-- Connection check: MSP_FC_VARIANT (is it Betaflight?) then MSP_FC_VERSION
+-- (is it a version whose MSP field offsets match the ones we hard-code?).
+--------------------------------------------------------------------------------
+local connectFlow = "variant" -- variant | version | done
+local fcVersionText = nil
+
 local function checkConnection()
+    connectFlow = "variant"
     app.session:request(mspMsgs.CMD.FC_VARIANT, "")
 end
 
-local function onConnectionResponse(cmd, payload, isError)
-    if isError then
-        app.connection = "disconnected"
-        return
+local function onConnectionResponse(cmd, payload)
+    if connectFlow == "variant" then
+        if cmd ~= mspMsgs.CMD.FC_VARIANT then
+            -- Not our reply; re-ask rather than decoding someone else's payload.
+            app.session:request(mspMsgs.CMD.FC_VARIANT, "")
+        elseif mspMsgs.isBetaflight(mspMsgs.decodeFcVariant(payload)) then
+            connectFlow = "version"
+            app.session:request(mspMsgs.CMD.FC_VERSION, "")
+        else
+            app.connection = "unsupported"
+        end
+    elseif connectFlow == "version" then
+        if cmd ~= mspMsgs.CMD.FC_VERSION then
+            app.session:request(mspMsgs.CMD.FC_VERSION, "")
+        else
+            local major, minor, patch = mspMsgs.decodeFcVersion(payload)
+            fcVersionText = tostring(major or "?") .. "." .. tostring(minor or "?") .. "." .. tostring(patch or "?")
+            if major == SUPPORTED_MAJOR and minor == SUPPORTED_MINOR then
+                connectFlow = "done"
+                app.connection = "connected"
+            else
+                app.connection = "unsupported_version"
+            end
+        end
     end
-    local variant = mspMsgs.decodeFcVariant(payload)
-    app.connection = mspMsgs.isBetaflight(variant) and "connected" or "unsupported"
+end
+
+local function pumpConnection(nowMs)
+    local status = app.session:poll(nowMs)
+    if status == "done" then
+        local cmd, payload = app.session:result()
+        onConnectionResponse(cmd, payload)
+    elseif status == "timeout" or status == "error" then
+        app.session:reset()
+        app.connection = "disconnected"
+    end
 end
 
 function init()
     checkConnection()
 end
 
-local FOOTER_Y = LCD_H - 40
-local saveFlow = "idle" -- idle | saving | eeprom | done
+--------------------------------------------------------------------------------
+-- Tap consumption: exactly one handler may act on a given tick's tap. Priority
+-- is chrome first (tab bar -> profile row -> footer), then the active page's
+-- own content, which receives a nil touchState once the tap has been claimed.
+--------------------------------------------------------------------------------
+local tapConsumed = false
+
+local function tapInRect(touchState, x, y, w, h)
+    if tapConsumed or not touchState or not touchState.tap then
+        return false
+    end
+    return touchState.x >= x and touchState.x < x + w
+        and touchState.y >= y and touchState.y < y + h
+end
+
+--------------------------------------------------------------------------------
+-- Save flow
+--
+-- Sequential queue over the DIRTY page keys (the msp session handles one
+-- request at a time): send each dirty key's SET message and wait for its
+-- reply, then issue a single EEPROM_WRITE, and only mark keys clean once that
+-- EEPROM_WRITE is itself confirmed. Anything less would either lose edits made
+-- on a non-active tab or report "saved" for settings that only reached FC RAM.
+--------------------------------------------------------------------------------
+-- Declared here (ahead of the profile section below) because handleFooterTouch
+-- needs to see it: a Lua closure only captures locals already in scope.
+local profileFlow = "idle" -- idle | selectPid | selectRate
+local pendingSlot = nil
+
+local saveFlow = "idle" -- idle | sending | waitSet | eeprom
+local saveQueue = nil
+local saveIndex = 0
+local saveWritten = nil -- keys whose SET was acknowledged, pending EEPROM confirm
+local saveError = nil
+
+local function beginSaveFlow()
+    saveQueue = {}
+    for _, key in ipairs(pageKeys) do
+        -- A key can only be dirty if it was loaded, but guard anyway: never
+        -- call beginSave() on a page whose state was never fetched.
+        if app.state:isDirty(key) and app.state:get(key) ~= nil then
+            saveQueue[#saveQueue + 1] = key
+        end
+    end
+    if #saveQueue == 0 then
+        saveQueue = nil
+        return
+    end
+    saveIndex = 0
+    saveWritten = {}
+    saveError = nil
+    saveFlow = "sending"
+end
+
+local function failSave(message)
+    saveError = message
+    saveFlow = "idle"
+    saveQueue = nil
+    saveWritten = nil
+    saveIndex = 0
+end
+
+local function pumpSaveFlow(nowMs)
+    if saveFlow == "idle" then
+        return false
+    end
+
+    if saveFlow == "sending" then
+        saveIndex = saveIndex + 1
+        local key = saveQueue[saveIndex]
+        if key == nil then
+            -- Every dirty key's SET has been acknowledged; commit to EEPROM.
+            app.session:request(mspMsgs.CMD.EEPROM_WRITE, "")
+            saveFlow = "eeprom"
+        else
+            pageByKey[key].beginSave(app.session, app.state)
+            saveFlow = "waitSet"
+        end
+        return true
+
+    elseif saveFlow == "waitSet" then
+        local status = app.session:poll(nowMs)
+        local key = saveQueue[saveIndex]
+        if status == "done" then
+            local cmd = app.session:result()
+            if cmd == SET_CMD_BY_KEY[key] then
+                saveWritten[#saveWritten + 1] = key
+                saveFlow = "sending"
+            else
+                -- Unexpected reply: we cannot claim this write landed.
+                failSave("Save failed: unexpected reply writing " .. key .. ".")
+            end
+        elseif status == "timeout" or status == "error" then
+            -- Stop the queue: do not skip ahead, and mark nothing clean.
+            app.session:reset()
+            failSave("Save failed: no reply writing " .. key .. ".")
+        end
+        return true
+
+    elseif saveFlow == "eeprom" then
+        local status = app.session:poll(nowMs)
+        if status == "done" then
+            local cmd = app.session:result()
+            if cmd == mspMsgs.CMD.EEPROM_WRITE then
+                -- Confirmed persisted: only now is it honest to clear the
+                -- "unsaved changes" indicator, and only for keys we actually
+                -- got a SET acknowledgement for.
+                for _, key in ipairs(saveWritten) do
+                    app.state:markClean(key)
+                end
+                saveError = nil
+                saveFlow = "idle"
+                saveQueue = nil
+                saveWritten = nil
+                saveIndex = 0
+            else
+                failSave("Save failed: unexpected reply to EEPROM write.")
+            end
+        elseif status == "timeout" or status == "error" then
+            app.session:reset()
+            failSave("Save failed: settings not written to EEPROM.")
+        end
+        return true
+    end
+
+    return false
+end
 
 local function drawFooter(armed)
     if armed then
         return
     end
-    lcd.drawFilledRectangle(0, FOOTER_Y, 100, 40, GREEN)
-    lcd.drawText(10, FOOTER_Y + 12, "Save")
-    lcd.drawFilledRectangle(110, FOOTER_Y, 100, 40, GREY)
-    lcd.drawText(120, FOOTER_Y + 12, "Cancel")
+    lcd.drawFilledRectangle(BTN_SAVE_X, FOOTER_Y, BTN_SAVE_W, FOOTER_H, GREEN)
+    lcd.drawText(BTN_SAVE_X + 10, FOOTER_Y + 12, "Save")
+    lcd.drawFilledRectangle(BTN_CANCEL_X, FOOTER_Y, BTN_CANCEL_W, FOOTER_H, GREY)
+    lcd.drawText(BTN_CANCEL_X + 10, FOOTER_Y + 12, "Cancel")
 
-    if app.state:isAnyDirty() then
+    if saveError then
+        lcd.drawText(220, FOOTER_Y + 12, saveError, RED)
+    elseif saveFlow ~= "idle" then
+        lcd.drawText(220, FOOTER_Y + 12, "Saving...")
+    elseif app.state:isAnyDirty() then
         lcd.drawText(220, FOOTER_Y + 12, "* unsaved changes")
     end
 end
@@ -90,18 +298,26 @@ local function handleFooterTouch(touchState, armed)
     if armed then
         return
     end
-    if not touchState or not touchState.tap then
+    -- Claim the whole footer strip: nothing else is allowed to act on a tap
+    -- that lands here, even if this particular tap hits no button.
+    if not tapInRect(touchState, 0, FOOTER_Y, LCD_W, FOOTER_H) then
         return
     end
-    local tx, ty = touchState.x, touchState.y
-    if ty < FOOTER_Y or ty > FOOTER_Y + 40 then
-        return
-    end
-    if tx >= 0 and tx <= 100 and app.state:isAnyDirty() and saveFlow == "idle" then
-        saveFlow = "saving"
-    elseif tx >= 110 and tx <= 210 then
-        for _, key in ipairs(pageKeys) do
-            app.state:reload(key)
+    tapConsumed = true
+    local tx = touchState.x
+    if tx >= BTN_SAVE_X and tx < BTN_SAVE_X + BTN_SAVE_W then
+        -- Don't start a save on top of an in-flight page load: the msp session
+        -- handles one request at a time and request() throws while pending.
+        if saveFlow == "idle" and profileFlow == "idle"
+            and not app.session:isPending() and app.state:isAnyDirty() then
+            beginSaveFlow()
+        end
+    elseif tx >= BTN_CANCEL_X and tx < BTN_CANCEL_X + BTN_CANCEL_W then
+        if saveFlow == "idle" then
+            for _, key in ipairs(pageKeys) do
+                app.state:reload(key)
+            end
+            saveError = nil
         end
     end
 end
@@ -111,14 +327,7 @@ end
 -- (one for the PID profile, one for the rate profile) sequenced through the
 -- single-request-at-a-time msp session, then invalidates all four cached
 -- state keys so each page's update() re-fetches fresh data for the new slot.
-local PROFILE_Y = 44
-local PROFILE_ROW_H = 16
-local PROFILE_BOX_W = 30
-local PROFILE_BOX_GAP = 6
-local PROFILE_BOX_X0 = 60
-
-local profileFlow = "idle" -- idle | selectPid | selectRate
-local pendingSlot = nil
+-- (profileFlow / pendingSlot are declared above, next to the save-flow state.)
 
 local function clearCachedState()
     for _, key in ipairs(pageKeys) do
@@ -148,9 +357,15 @@ local function drawProfileRow(armed)
 end
 
 local function handleProfileTouch(touchState, armed)
-    if armed or not touchState or not touchState.tap then
+    if armed then
         return
     end
+    -- Claim the whole profile strip before applying the guards below, so a tap
+    -- rejected by a guard is not then re-interpreted by the page underneath.
+    if not tapInRect(touchState, 0, PROFILE_Y, LCD_W, PROFILE_ROW_H) then
+        return
+    end
+    tapConsumed = true
     if saveFlow ~= "idle" or profileFlow ~= "idle" then
         return
     end
@@ -160,13 +375,10 @@ local function handleProfileTouch(touchState, armed)
     if app.session:isPending() then
         return -- avoid reentrant session:request() while a page's own load is in flight
     end
-    local tx, ty = touchState.x, touchState.y
-    if ty < PROFILE_Y or ty > PROFILE_Y + PROFILE_ROW_H then
-        return
-    end
+    local tx = touchState.x
     for i = 1, 3 do
         local x = PROFILE_BOX_X0 + (i - 1) * (PROFILE_BOX_W + PROFILE_BOX_GAP)
-        if tx >= x and tx <= x + PROFILE_BOX_W and i ~= app.profileSlot then
+        if tx >= x and tx < x + PROFILE_BOX_W and i ~= app.profileSlot then
             pendingSlot = i
             app.session:request(mspMsgs.CMD.SELECT_SETTING, mspMsgs.encodeSelectSetting("pid", i - 1))
             profileFlow = "selectPid"
@@ -179,9 +391,16 @@ local function pumpProfileFlow(nowMs)
     if profileFlow == "selectPid" then
         local status = app.session:poll(nowMs)
         if status == "done" then
-            app.session:request(mspMsgs.CMD.SELECT_SETTING, mspMsgs.encodeSelectSetting("rate", pendingSlot - 1))
-            profileFlow = "selectRate"
+            local cmd = app.session:result()
+            if cmd == mspMsgs.CMD.SELECT_SETTING then
+                app.session:request(mspMsgs.CMD.SELECT_SETTING, mspMsgs.encodeSelectSetting("rate", pendingSlot - 1))
+                profileFlow = "selectRate"
+            else
+                profileFlow = "idle"
+                pendingSlot = nil
+            end
         elseif status == "timeout" or status == "error" then
+            app.session:reset()
             profileFlow = "idle"
             pendingSlot = nil
         end
@@ -189,11 +408,15 @@ local function pumpProfileFlow(nowMs)
     elseif profileFlow == "selectRate" then
         local status = app.session:poll(nowMs)
         if status == "done" then
-            app.profileSlot = pendingSlot
-            clearCachedState()
+            local cmd = app.session:result()
+            if cmd == mspMsgs.CMD.SELECT_SETTING then
+                app.profileSlot = pendingSlot
+                clearCachedState()
+            end
             profileFlow = "idle"
             pendingSlot = nil
         elseif status == "timeout" or status == "error" then
+            app.session:reset()
             profileFlow = "idle"
             pendingSlot = nil
         end
@@ -202,29 +425,58 @@ local function pumpProfileFlow(nowMs)
     return false
 end
 
+local function drawTabBar(armed)
+    for i, name in ipairs(pageNames) do
+        local w = LCD_W // #pageNames
+        local x = (i - 1) * w
+        if i == app.activeTab then
+            lcd.drawFilledRectangle(x, TAB_Y, w, TAB_H, BLUE)
+        end
+        lcd.drawText(x + 8, TAB_Y + 4, name)
+    end
+end
+
+local function handleTabTouch(touchState, armed)
+    if armed then
+        return
+    end
+    local w = LCD_W // #pageNames
+    for i = 1, #pageNames do
+        local x = (i - 1) * w
+        if tapInRect(touchState, x, TAB_Y, w, TAB_H) then
+            tapConsumed = true
+            app.activeTab = i
+            return
+        end
+    end
+end
+
+local function connectionMessage()
+    if app.connection == "connecting" then
+        return "Connecting to flight controller..."
+    elseif app.connection == "unsupported" then
+        return "Connected, but flight controller is not Betaflight."
+    elseif app.connection == "unsupported_version" then
+        return "Unsupported firmware " .. tostring(fcVersionText)
+            .. " -- this tool requires Betaflight "
+            .. SUPPORTED_MAJOR .. "." .. SUPPORTED_MINOR .. ".x"
+    end
+    return "No response from flight controller. Check link."
+end
+
 function run(event, touchState)
     local nowMs = getTime() * 10
     pumpTelemetry(nowMs)
 
     if app.connection == "connecting" then
-        local status = app.session:poll(nowMs)
-        if status == "done" or status == "error" then
-            onConnectionResponse(app.session:result())
-        elseif status == "timeout" then
-            app.connection = "disconnected"
-        end
+        pumpConnection(nowMs)
     end
 
     lcd.clear()
 
     if app.connection ~= "connected" then
         lcd.drawText(10, 10, "Betaflight Dashboard", MIDSIZE)
-        local msg = ({
-            connecting = "Connecting to flight controller...",
-            unsupported = "Connected, but flight controller is not Betaflight.",
-            disconnected = "No response from flight controller. Check link.",
-        })[app.connection]
-        lcd.drawText(10, 40, msg)
+        lcd.drawText(10, 40, connectionMessage())
         return
     end
 
@@ -234,60 +486,32 @@ function run(event, touchState)
         lcd.drawText(10, 4, "ARMED -- read only", WHITE)
     end
 
-    for i, name in ipairs(pageNames) do
-        local x = (i - 1) * (LCD_W // #pageNames)
-        local w = LCD_W // #pageNames
-        if i == app.activeTab then
-            lcd.drawFilledRectangle(x, 20, w, 24, BLUE)
-        end
-        lcd.drawText(x + 8, 24, name)
-        if not armed and touchState and touchState.tap
-            and touchState.y >= 20 and touchState.y <= 44
-            and touchState.x >= x and touchState.x < x + w then
-            app.activeTab = i
-        end
-    end
+    -- Touch dispatch, highest priority first. Each handler claims the tap if it
+    -- lands in its region, so a single tap can never trigger two actions.
+    tapConsumed = false
+    handleTabTouch(touchState, armed)
+    handleProfileTouch(touchState, armed)
+    handleFooterTouch(touchState, armed)
 
+    drawTabBar(armed)
     drawProfileRow(armed)
 
-    local activePage = pages[app.activeTab]
-
-    if saveFlow == "saving" then
-        local activeKey = pageKeys[app.activeTab]
-        if app.state:get(activeKey) == nil then
-            -- The active tab hasn't finished loading, so it can't be the tab
-            -- that's actually dirty (a not-yet-loaded page has no edits).
-            -- Abort silently rather than calling beginSave on nil state.
-            saveFlow = "idle"
-        else
-            activePage.beginSave(app.session, app.state)
-            saveFlow = "eeprom"
-        end
-    elseif saveFlow == "eeprom" then
-        local status = app.session:poll(nowMs)
-        if status == "done" then
-            app.state:markClean("pids")
-            app.state:markClean("rates")
-            app.state:markClean("filters")
-            app.state:markClean("vtx")
-            app.session:request(mspMsgs.CMD.EEPROM_WRITE, "")
-            saveFlow = "done"
-        elseif status == "timeout" or status == "error" then
-            saveFlow = "idle" -- Save failed; state stays dirty, footer still shows unsaved changes
-        end
-    elseif saveFlow == "done" then
-        local status = app.session:poll(nowMs)
-        if status == "done" or status == "timeout" or status == "error" then
-            saveFlow = "idle"
-        end
+    if pumpSaveFlow(nowMs) then
+        -- save in progress; skip page update/event this tick
     elseif pumpProfileFlow(nowMs) then
         -- profile-slot switch in progress; skip page update/event this tick
     else
+        -- The page only ever sees a tap the chrome did not already claim.
+        -- NB: not `tapConsumed and nil or touchState` -- that idiom yields
+        -- touchState in BOTH branches, since the true branch evaluates to nil.
+        local pageTouch = touchState
+        if tapConsumed then
+            pageTouch = nil
+        end
+        local activePage = pages[app.activeTab]
         activePage.update(app.state, armed)
-        activePage.event(event, touchState, app.state, app.session, nowMs, armed)
+        activePage.event(event, pageTouch, app.state, app.session, nowMs, armed)
     end
 
     drawFooter(armed)
-    handleFooterTouch(touchState, armed)
-    handleProfileTouch(touchState, armed)
 end
