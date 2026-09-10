@@ -41,10 +41,12 @@ local YAW_ROW = { { key = "yawLowpassHz", label = "Yaw Lowpass Cutoff [Hz]" } }
 
 -- Layout: content starts a few px below the tab bar + profile row (which end
 -- at y=64), so it doesn't crowd it, and must finish above the footer at
--- y=232. Worst case (D Term Lowpass 1 in dynamic mode) is 7 rows * 20px =
--- 140px, span y=70..210.
+-- y=232. Slider row (20px) + spacer (10px) + up to 6 field rows * 18px
+-- (worst case, D Term Lowpass 1 in dynamic mode) = 138px, span y=70..208.
 local CONTENT_TOP = 70
-local ROW_H = 20
+local SLIDER_ROW_H = 20
+local SPACER_H = 10
+local ROW_H = 18
 local COL_X, COL_W = 6, 468
 local SLIDER_X, SLIDER_W, SLIDER_H = 220, 180, 18
 local VALUE_X = 410
@@ -85,14 +87,28 @@ local function drawRow(x, w, y, row, values, touchState, armed)
     end
 end
 
-local function drawMultiplierSlider(x, w, y, values, touchState, armed)
+-- Slider supports both jog-dial stepping (while focused, handled in
+-- M.event below via shared.adjustFocusedField) AND direct touch-drag: a
+-- touch landing inside the bar itself sets the value straight from the
+-- touch's x position, same as dragging a real slider, and also focuses it
+-- so the dial can keep adjusting from there. A touch elsewhere on the row
+-- (the label or value text) just toggles focus, matching every other row.
+local function drawMultiplierSlider(x, w, y, values, touchState, armed, state)
     local isFocused = (focusedKey == "mult:dterm")
     local color = isFocused and COLOR_YELLOW or COLOR_WHITE
     lcd.drawText(x, y, "D Term Filter Multiplier", color)
     ui.drawSliderBar(SLIDER_X, y, SLIDER_W, SLIDER_H, values.dtermFilterMultiplier, shared.MULT_MIN, shared.MULT_MAX,
         color, isFocused and COLOR_YELLOW or COLOR_BLUE)
     lcd.drawText(VALUE_X, y, string.format("%.2f", values.dtermFilterMultiplier / 100), color)
-    if not armed and ui.rowTapped(touchState, x, x + w, y, ROW_H) then
+
+    if armed then
+        return
+    end
+    local dragValue = ui.sliderTouchValue(touchState, SLIDER_X, SLIDER_W, y, SLIDER_H, shared.MULT_MIN, shared.MULT_MAX)
+    if dragValue then
+        focusedKey = "mult:dterm"
+        shared.setMultiplier("dterm", state, dragValue)
+    elseif ui.rowTapped(touchState, x, x + w, y, SLIDER_ROW_H) then
         focusedKey = isFocused and nil or "mult:dterm"
     end
 end
@@ -139,8 +155,8 @@ function M.event(event, touchState, state, session, nowMs, armed)
     end
 
     local y = CONTENT_TOP
-    drawMultiplierSlider(COL_X, COL_W, y, values, touchState, armed)
-    y = y + ROW_H
+    drawMultiplierSlider(COL_X, COL_W, y, values, touchState, armed, state)
+    y = y + SLIDER_ROW_H + SPACER_H
 
     y = drawDtermLpf1(COL_X, COL_W, y, values, touchState, armed)
     drawRow(COL_X, COL_W, y, D2_ROW, values, touchState, armed)

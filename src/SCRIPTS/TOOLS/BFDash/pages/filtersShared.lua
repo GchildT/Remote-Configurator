@@ -190,23 +190,35 @@ function M.fieldValueText(key, values)
     return tostring(values[key])
 end
 
+-- Clamps and stages a new multiplier value (raw byte units, e.g. 150 =
+-- "1.50") and marks it dirty for pumpMultiplierCalc to pick up. Shared by
+-- both the jog-dial path (adjustFocusedField below, which adds a relative
+-- step) and each tab's touch-drag handling on the slider bar itself (which
+-- computes an absolute value from touch position) -- one place for the
+-- clamp range and dirty-flag bookkeeping.
+function M.setMultiplier(which, state, rawValue)
+    local clamped = math.max(M.MULT_MIN, math.min(M.MULT_MAX, rawValue))
+    if which == "gyro" then
+        state:setField(M.PAGE_KEY, "gyroFilterMultiplier", clamped)
+        gyroMultDirty = true
+    else
+        state:setField(M.PAGE_KEY, "dtermFilterMultiplier", clamped)
+        dtermMultDirty = true
+    end
+end
+
 -- Dispatches a jog-dial rotation to whichever field is focused. `focusedKey`
 -- is one of: a raw FIELD_SPECS key, "mode:dtermLpf1", "mult:gyro", or
--- "mult:dterm". Shared by both tabs so the dispatch logic (and the
--- MULT_MIN/MAX/STEP clamp) lives in exactly one place; a tab only ever sets
--- focusedKey to values relevant to its own rendered fields, so the other
--- branches are simply never hit from that tab.
+-- "mult:dterm". Shared by both tabs so the dispatch logic lives in exactly
+-- one place; a tab only ever sets focusedKey to values relevant to its own
+-- rendered fields, so the other branches are simply never hit from that tab.
 function M.adjustFocusedField(focusedKey, delta, values, state)
     if focusedKey == "mode:dtermLpf1" then
         M.setDtermLpf1Mode(values, state, not M.dtermLpf1IsDynamic(values))
     elseif focusedKey == "mult:gyro" then
-        local newValue = math.max(M.MULT_MIN, math.min(M.MULT_MAX, values.gyroFilterMultiplier + delta * M.MULT_STEP))
-        state:setField(M.PAGE_KEY, "gyroFilterMultiplier", newValue)
-        gyroMultDirty = true
+        M.setMultiplier("gyro", state, values.gyroFilterMultiplier + delta * M.MULT_STEP)
     elseif focusedKey == "mult:dterm" then
-        local newValue = math.max(M.MULT_MIN, math.min(M.MULT_MAX, values.dtermFilterMultiplier + delta * M.MULT_STEP))
-        state:setField(M.PAGE_KEY, "dtermFilterMultiplier", newValue)
-        dtermMultDirty = true
+        M.setMultiplier("dterm", state, values.dtermFilterMultiplier + delta * M.MULT_STEP)
     else
         local spec = M.FIELD_SPECS[focusedKey]
         if spec then

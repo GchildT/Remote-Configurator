@@ -37,20 +37,23 @@ end
 -- comment for why (both tabs edit the same underlying MSP_FILTER_CONFIG
 -- buffer).
 local ROWS = {
-    { { key = "gyroLpf1Hz", label = "Gyro Lowpass 1 Cutoff [Hz]" }, { key = "gyroLpf1Type", label = "Type" } },
-    { { key = "gyroLpf2Hz", label = "Gyro Lowpass 2 Cutoff [Hz]" }, { key = "gyroLpf2Type", label = "Type" } },
+    { { key = "gyroLpf1Hz", label = "Gyro Lowpass 1 [Hz]" }, { key = "gyroLpf1Type", label = "Type" } },
+    { { key = "gyroLpf2Hz", label = "Gyro Lowpass 2 [Hz]" }, { key = "gyroLpf2Type", label = "Type" } },
     { { key = "gyroNotch1Hz", label = "Gyro Notch 1 Center [Hz]" }, { key = "gyroNotch1Cutoff", label = "Cutoff [Hz]" } },
     { { key = "gyroNotch2Hz", label = "Gyro Notch 2 Center [Hz]" }, { key = "gyroNotch2Cutoff", label = "Cutoff [Hz]" } },
     { { key = "rpmFilterHarmonics", label = "RPM Filter Harmonics" }, { key = "rpmFilterMinHz", label = "Min Hz" } },
-    { { key = "dynNotchCount", label = "Dyn Notch Count" }, { key = "dynNotchQ", label = "Q Factor (x100)" } },
+    { { key = "dynNotchCount", label = "Dyn Notch Count" }, { key = "dynNotchQ", label = "Q Factor" } },
     { { key = "dynNotchMinHz", label = "Dyn Notch Min Hz" }, { key = "dynNotchMaxHz", label = "Max Hz" } },
 }
 
 -- Layout: content starts a few px below the tab bar + profile row (which end
 -- at y=64), so it doesn't crowd it, and must finish above the footer at
--- y=232. 1 slider row + 7 field rows * 20px = 160px, span y=70..230.
+-- y=232. Slider row (20px) + spacer (10px) + 7 field rows * 18px = 156px,
+-- span y=70..226.
 local CONTENT_TOP = 70
-local ROW_H = 20
+local SLIDER_ROW_H = 20
+local SPACER_H = 10
+local ROW_H = 18
 local COL_X, COL_W = 6, 468
 local SLIDER_X, SLIDER_W, SLIDER_H = 220, 180, 18
 local VALUE_X = 410
@@ -91,14 +94,28 @@ local function drawRow(x, w, y, row, values, touchState, armed)
     end
 end
 
-local function drawMultiplierSlider(x, w, y, values, touchState, armed)
+-- Slider supports both jog-dial stepping (while focused, handled in
+-- M.event below via shared.adjustFocusedField) AND direct touch-drag: a
+-- touch landing inside the bar itself sets the value straight from the
+-- touch's x position, same as dragging a real slider, and also focuses it
+-- so the dial can keep adjusting from there. A touch elsewhere on the row
+-- (the label or value text) just toggles focus, matching every other row.
+local function drawMultiplierSlider(x, w, y, values, touchState, armed, state)
     local isFocused = (focusedKey == "mult:gyro")
     local color = isFocused and COLOR_YELLOW or COLOR_WHITE
     lcd.drawText(x, y, "Gyro Filter Multiplier", color)
     ui.drawSliderBar(SLIDER_X, y, SLIDER_W, SLIDER_H, values.gyroFilterMultiplier, shared.MULT_MIN, shared.MULT_MAX,
         color, isFocused and COLOR_YELLOW or COLOR_BLUE)
     lcd.drawText(VALUE_X, y, string.format("%.2f", values.gyroFilterMultiplier / 100), color)
-    if not armed and ui.rowTapped(touchState, x, x + w, y, ROW_H) then
+
+    if armed then
+        return
+    end
+    local dragValue = ui.sliderTouchValue(touchState, SLIDER_X, SLIDER_W, y, SLIDER_H, shared.MULT_MIN, shared.MULT_MAX)
+    if dragValue then
+        focusedKey = "mult:gyro"
+        shared.setMultiplier("gyro", state, dragValue)
+    elseif ui.rowTapped(touchState, x, x + w, y, SLIDER_ROW_H) then
         focusedKey = isFocused and nil or "mult:gyro"
     end
 end
@@ -121,8 +138,8 @@ function M.event(event, touchState, state, session, nowMs, armed)
     end
 
     local y = CONTENT_TOP
-    drawMultiplierSlider(COL_X, COL_W, y, values, touchState, armed)
-    y = y + ROW_H
+    drawMultiplierSlider(COL_X, COL_W, y, values, touchState, armed, state)
+    y = y + SLIDER_ROW_H + SPACER_H
 
     for _, row in ipairs(ROWS) do
         drawRow(COL_X, COL_W, y, row, values, touchState, armed)

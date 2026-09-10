@@ -24,4 +24,22 @@ function M.drawSliderBar(x, y, w, h, value, min, max, outlineColor, fillColor)
     lcd.drawFilledRectangle(x, y, math.floor(w * pct), h, fillColor)
 end
 
+-- Maps a touch position within a slider bar's own rectangle [x, x+w) x
+-- [y, y+h) to a value in [min, max], for direct touch-drag adjustment
+-- (as opposed to jog-dial stepping). Returns nil when there's no touch this
+-- tick or it landed outside the bar -- callers should fall back to their
+-- normal tap-to-focus handling in that case.
+function M.sliderTouchValue(touchState, x, w, y, h, min, max)
+    if not touchState then
+        return nil
+    end
+    local tx, ty = touchState.x, touchState.y
+    if tx < x or tx >= x + w or ty < y or ty >= y + h then
+        return nil
+    end
+    local pct = (tx - x) / w
+    pct = math.max(0, math.min(1, pct))
+    return math.floor(min + pct * (max - min) + 0.5)
+end
+
 return M

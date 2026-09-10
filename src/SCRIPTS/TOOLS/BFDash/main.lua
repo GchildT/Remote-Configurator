@@ -79,7 +79,7 @@ local setupOk, setupErr = pcall(function()
     -- pageNames here (5 state keys backing 6 tabs) -- nothing else in this
     -- file assumes they're the same length.
     pages = { pidsPage, ratesPage, globalFiltersPage, profileFiltersPage, vtxPage, throttlePage }
-    pageNames = { "PIDs", "Rates", "Global", "Profile", "VTX", "Motor" }
+    pageNames = { "PIDs", "Rates", "Filters(G)", "Filters(P)", "VTX", "Motor" }
     pageKeys = { "pids", "rates", "filters", "vtx", "throttle" }
     pageByKey = { pids = pidsPage, rates = ratesPage, filters = globalFiltersPage, vtx = vtxPage, throttle = throttlePage }
 
