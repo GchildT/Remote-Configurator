@@ -18,6 +18,8 @@ M.CMD = {
     SIMPLIFIED_TUNING = 140,
     SET_SIMPLIFIED_TUNING = 141,
     CALCULATE_SIMPLIFIED_PID = 142,
+    CALCULATE_SIMPLIFIED_GYRO = 143,
+    CALCULATE_SIMPLIFIED_DTERM = 144,
 }
 
 -- Offsets verified against Betaflight 4.5.5 src/main/msp/msp.c
@@ -33,6 +35,45 @@ M.SIMPLIFIED_TUNING_FIELDS = {
     feedforwardGain = { offset = 8, size = 1 },
     pitchPiGain = { offset = 9, size = 1 },
 }
+
+-- The full MSP_SIMPLIFIED_TUNING (140) GET payload is actually THREE blocks
+-- concatenated -- writeSimplifiedPids (17 bytes, SIMPLIFIED_TUNING_FIELDS
+-- above), writeSimplifiedDtermFilters (18 bytes), writeSimplifiedGyroFilters
+-- (18 bytes), 53 bytes total -- verified against Betaflight 4.5.5 AND
+-- 2026.6.1 src/main/msp/msp.c. This project only reads the two "is the
+-- filter multiplier slider set to something" bytes out of the latter two
+-- blocks, purely to seed the Filters page's multiplier display on load --
+-- see FILTER_MULTIPLIER_CALC_FIELDS below for the separate 18-byte format
+-- used to actually recompute filter values from a new multiplier position.
+M.SIMPLIFIED_TUNING_MULTIPLIER_FIELDS = {
+    dtermFilterMultiplier = { offset = 19, size = 1 },
+    gyroFilterMultiplier = { offset = 37, size = 1 },
+}
+
+-- Shared 18-byte request/response shape for BOTH MSP_CALCULATE_SIMPLIFIED_
+-- GYRO (143) and MSP_CALCULATE_SIMPLIFIED_DTERM (144) -- verified against
+-- Betaflight 4.5.5 AND 2026.6.1 src/main/msp/msp.c: readSimplifiedGyroFilters/
+-- readSimplifiedDtermFilters (request) and writeSimplifiedGyroFilters/
+-- writeSimplifiedDtermFilters (response) are byte-for-byte identical in
+-- shape to each other (only the semantic meaning of "which filter family"
+-- differs, per which command id was sent): enabled flag, multiplier
+-- percentage (raw = display*100), static lpf1/lpf2 Hz, dynamic lpf1 min/max
+-- Hz, then 8 reserved bytes. Confirmed against betaflight-configurator
+-- source (src/js/composables/useTuningSliders.js:
+-- calculateNewGyroFilters/calculateNewDTermFilters): the request is built by
+-- setting the enabled flag to 1 and the multiplier to the new slider
+-- position, seeding the rest from the currently-loaded filter values, then
+-- sending it to the FC, which computes and returns the resulting Hz values
+-- in this same shape -- nothing is saved to the FC by this command itself.
+M.FILTER_MULTIPLIER_CALC_FIELDS = {
+    enabled = { offset = 1, size = 1 },
+    multiplier = { offset = 2, size = 1 },
+    lpf1Hz = { offset = 3, size = 2 },
+    lpf2Hz = { offset = 5, size = 2 },
+    dynMinHz = { offset = 7, size = 2 },
+    dynMaxHz = { offset = 9, size = 2 },
+}
+M.FILTER_MULTIPLIER_CALC_PAYLOAD_LEN = 18
 
 -- Offsets verified against Betaflight 4.5.5 src/main/msp/msp.c (case MSP_RC_TUNING).
 M.RC_TUNING_FIELDS = {

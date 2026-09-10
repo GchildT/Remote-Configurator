@@ -17,6 +17,9 @@ testkit.describe("mspMsgs.CMD", function()
         testkit.assertEquals(mspMsgs.CMD.EEPROM_WRITE, 250, "EEPROM_WRITE")
         testkit.assertEquals(mspMsgs.CMD.SIMPLIFIED_TUNING, 140, "SIMPLIFIED_TUNING")
         testkit.assertEquals(mspMsgs.CMD.SET_SIMPLIFIED_TUNING, 141, "SET_SIMPLIFIED_TUNING")
+        testkit.assertEquals(mspMsgs.CMD.CALCULATE_SIMPLIFIED_PID, 142, "CALCULATE_SIMPLIFIED_PID")
+        testkit.assertEquals(mspMsgs.CMD.CALCULATE_SIMPLIFIED_GYRO, 143, "CALCULATE_SIMPLIFIED_GYRO")
+        testkit.assertEquals(mspMsgs.CMD.CALCULATE_SIMPLIFIED_DTERM, 144, "CALCULATE_SIMPLIFIED_DTERM")
     end)
 end)
 
@@ -119,6 +122,46 @@ testkit.describe("mspMsgs.FILTER_CONFIG_FIELDS", function()
             testkit.assertEquals(mspBuffer.readField(buf, mspMsgs.FILTER_CONFIG_FIELDS[key]), value, key)
         end
         testkit.assertEquals(#buf, 49, "buffer length unchanged by writes")
+    end)
+end)
+
+testkit.describe("mspMsgs.SIMPLIFIED_TUNING_MULTIPLIER_FIELDS", function()
+    testkit.it("reads the gyro/dterm filter multiplier bytes at their verified offsets in the 53-byte MSP_SIMPLIFIED_TUNING payload", function()
+        -- Offsets verified against Betaflight 4.5.5 AND 2026.6.1
+        -- src/main/msp/msp.c: writeSimplifiedPids (17 bytes) +
+        -- writeSimplifiedDtermFilters (18 bytes, multiplier at its byte 2 ->
+        -- overall offset 19) + writeSimplifiedGyroFilters (18 bytes,
+        -- multiplier at its byte 2 -> overall offset 37).
+        local buf = string.rep("\0", 53)
+        buf = mspBuffer.writeField(buf, mspMsgs.SIMPLIFIED_TUNING_MULTIPLIER_FIELDS.dtermFilterMultiplier, 120)
+        buf = mspBuffer.writeField(buf, mspMsgs.SIMPLIFIED_TUNING_MULTIPLIER_FIELDS.gyroFilterMultiplier, 150)
+        testkit.assertEquals(mspBuffer.readField(buf, mspMsgs.SIMPLIFIED_TUNING_MULTIPLIER_FIELDS.dtermFilterMultiplier), 120, "dtermFilterMultiplier")
+        testkit.assertEquals(mspBuffer.readField(buf, mspMsgs.SIMPLIFIED_TUNING_MULTIPLIER_FIELDS.gyroFilterMultiplier), 150, "gyroFilterMultiplier")
+        testkit.assertEquals(#buf, 53, "buffer length unchanged by writes")
+    end)
+end)
+
+testkit.describe("mspMsgs.FILTER_MULTIPLIER_CALC_FIELDS", function()
+    testkit.it("reads/writes the shared 18-byte CALCULATE_SIMPLIFIED_GYRO/DTERM request-response fields", function()
+        -- Offsets verified against Betaflight 4.5.5 AND 2026.6.1
+        -- src/main/msp/msp.c: readSimplifiedGyroFilters/readSimplifiedDtermFilters
+        -- (request) and writeSimplifiedGyroFilters/writeSimplifiedDtermFilters
+        -- (response) share this exact 18-byte shape.
+        local F = mspMsgs.FILTER_MULTIPLIER_CALC_FIELDS
+        local buf = string.rep("\0", mspMsgs.FILTER_MULTIPLIER_CALC_PAYLOAD_LEN)
+        buf = mspBuffer.writeField(buf, F.enabled, 1)
+        buf = mspBuffer.writeField(buf, F.multiplier, 150)
+        buf = mspBuffer.writeField(buf, F.lpf1Hz, 250)
+        buf = mspBuffer.writeField(buf, F.lpf2Hz, 500)
+        buf = mspBuffer.writeField(buf, F.dynMinHz, 100)
+        buf = mspBuffer.writeField(buf, F.dynMaxHz, 400)
+        testkit.assertEquals(mspBuffer.readField(buf, F.enabled), 1, "enabled")
+        testkit.assertEquals(mspBuffer.readField(buf, F.multiplier), 150, "multiplier")
+        testkit.assertEquals(mspBuffer.readField(buf, F.lpf1Hz), 250, "lpf1Hz")
+        testkit.assertEquals(mspBuffer.readField(buf, F.lpf2Hz), 500, "lpf2Hz")
+        testkit.assertEquals(mspBuffer.readField(buf, F.dynMinHz), 100, "dynMinHz")
+        testkit.assertEquals(mspBuffer.readField(buf, F.dynMaxHz), 400, "dynMaxHz")
+        testkit.assertEquals(#buf, 18, "buffer length is 18 bytes")
     end)
 end)
 

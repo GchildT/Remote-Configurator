@@ -39,17 +39,25 @@ for now.
 - **Rates** -- all 4 rate types (Betaflight/RaceFlight/KISS/Actual/
   QuickRates), Roll/Pitch/Yaw x Sensitivity/Max Rate/Expo grid, with the
   same per-type display scaling Configurator uses.
-- **Filters** -- single-column list covering Gyro/D-Term Lowpass 1 & 2 (with
-  filter type), Gyro RPM Filter, and Dynamic Notch Filter, all as plain
-  always-visible fields -- no on/off switches. Dialing a filter's cutoff/
-  count/harmonics field down to 0 is what disables it on the FC itself
-  (Betaflight's own convention), so there's nothing separate to toggle.
-  D-Term Lowpass 1 also has a STATIC/DYNAMIC mode row, matching
-  Configurator's own behavior (there's no separate "mode" byte in the
-  firmware -- it's inferred from whether the dynamic-min field is non-zero,
-  the same way Configurator infers it). Gyro/D-Term Notch and Yaw Lowpass
-  were dropped from this tab to cut clutter and give the remaining fields
-  more room -- their values are left untouched on the FC, not reset.
+- **Filters** -- single-column list, ordered top-to-bottom the same way
+  Configurator's own Filter Settings screen is: Gyro Filter Multiplier / D
+  Term Filter Multiplier sliders first, then Gyro Lowpass 1 & 2 (with filter
+  type), Gyro RPM Filter, Dynamic Notch Filter, and D-Term Lowpass 1 (with a
+  STATIC/DYNAMIC mode row -- there's no separate "mode" byte in the firmware,
+  it's inferred from whether the dynamic-min field is non-zero, same as
+  Configurator). Gyro/D-Term Notch, Yaw Lowpass, and D-Term Lowpass 2 aren't
+  shown as their own rows (cut for clutter/space); their values are left
+  untouched by a save, EXCEPT D-Term Lowpass 2's, which the D Term Filter
+  Multiplier slider still recomputes and saves even though it has no row of
+  its own -- matching real Betaflight, where that multiplier scales the
+  whole D-term filter family together. All fields are plain always-visible
+  rows -- no on/off switches; dialing a cutoff/count/harmonics field down to
+  0 is what disables it on the FC itself (Betaflight's own convention).
+  The two Filter Multiplier sliders work exactly as they do in Configurator:
+  moving one sends `MSP_CALCULATE_SIMPLIFIED_GYRO`/`DTERM` to the FC, which
+  computes and returns the resulting lowpass cutoffs from that multiplier --
+  this tool never computes that math itself, only applies what the FC
+  reports back.
 - **VTX** -- Band, Channel, Power.
 - **Motor** -- Throttle Boost, Motor Output Limit, Dynamic Idle Value, Vbat
   Sag Compensation %, Thrust Linearization % -- all plain fields, 0 = off for
