@@ -39,25 +39,33 @@ for now.
 - **Rates** -- all 4 rate types (Betaflight/RaceFlight/KISS/Actual/
   QuickRates), Roll/Pitch/Yaw x Sensitivity/Max Rate/Expo grid, with the
   same per-type display scaling Configurator uses.
-- **Filters** -- single-column list, ordered top-to-bottom the same way
-  Configurator's own Filter Settings screen is: Gyro Filter Multiplier / D
-  Term Filter Multiplier sliders first, then Gyro Lowpass 1 & 2 (with filter
-  type), Gyro RPM Filter, Dynamic Notch Filter, and D-Term Lowpass 1 (with a
-  STATIC/DYNAMIC mode row -- there's no separate "mode" byte in the firmware,
-  it's inferred from whether the dynamic-min field is non-zero, same as
-  Configurator). Gyro/D-Term Notch, Yaw Lowpass, and D-Term Lowpass 2 aren't
-  shown as their own rows (cut for clutter/space); their values are left
-  untouched by a save, EXCEPT D-Term Lowpass 2's, which the D Term Filter
-  Multiplier slider still recomputes and saves even though it has no row of
-  its own -- matching real Betaflight, where that multiplier scales the
-  whole D-term filter family together. All fields are plain always-visible
-  rows -- no on/off switches; dialing a cutoff/count/harmonics field down to
-  0 is what disables it on the FC itself (Betaflight's own convention).
-  The two Filter Multiplier sliders work exactly as they do in Configurator:
-  moving one sends `MSP_CALCULATE_SIMPLIFIED_GYRO`/`DTERM` to the FC, which
-  computes and returns the resulting lowpass cutoffs from that multiplier --
-  this tool never computes that math itself, only applies what the FC
-  reports back.
+- **Global Filters** -- the profile-INDEPENDENT half of Betaflight's Filter
+  Settings screen (`gyroConfig()` is one global struct shared by all 3 PID
+  profiles). Order matches Configurator's own screen: Gyro Filter Multiplier
+  (a graphical slider, styled like the PIDs page's sliders), Gyro Lowpass
+  1 & 2 (with filter type), Gyro Notch Filters 1 & 2, Gyro RPM Filter, and
+  Dynamic Notch Filter.
+- **Profile Filters** -- the profile-DEPENDENT half (these fields live in the
+  currently-active PID profile slot). Order: D Term Filter Multiplier
+  (graphical slider), D Term Lowpass 1 (with a STATIC/DYNAMIC mode row --
+  there's no separate "mode" byte in the firmware, it's inferred from
+  whether the dynamic-min field is non-zero, same as Configurator), D Term
+  Lowpass 2, D Term Notch Filter, and Yaw Lowpass Filter.
+
+  Both tabs are plain always-visible rows -- no on/off switches; dialing a
+  cutoff/count/harmonics field down to 0 is what disables it on the FC
+  itself (Betaflight's own convention). The two Filter Multiplier sliders
+  work exactly as they do in Configurator: moving one sends
+  `MSP_CALCULATE_SIMPLIFIED_GYRO`/`DTERM` to the FC, which computes and
+  returns the resulting lowpass cutoffs from that multiplier -- this tool
+  never computes that math itself, only applies what the FC reports back.
+
+  Despite being two tabs, both edit the SAME underlying `MSP_FILTER_CONFIG`
+  buffer (Betaflight has no separate MSP command per section) through one
+  shared backing module (`pages/filtersShared.lua`), one shared state key,
+  and one shared load/save cycle -- so an edit on one tab and an edit on the
+  other can never clobber each other on save, and switching tabs never
+  triggers a redundant reload.
 - **VTX** -- Band, Channel, Power.
 - **Motor** -- Throttle Boost, Motor Output Limit, Dynamic Idle Value, Vbat
   Sag Compensation %, Thrust Linearization % -- all plain fields, 0 = off for

@@ -19,7 +19,7 @@ local COLOR_GREY = lcd.RGB(130, 130, 130)
 -- instead of the radio silently doing nothing. Remove this wrapper once the
 -- script is confirmed loading cleanly on real hardware.
 local msp, mspMsgs, stateMod, safety
-local pidsPage, ratesPage, filtersPage, vtxPage, throttlePage
+local pidsPage, ratesPage, globalFiltersPage, profileFiltersPage, vtxPage, throttlePage
 local CRSF_FRAMETYPE_MSP_RESP
 local REQUEST_TIMEOUT_MS
 local MIN_API_MAJOR, MIN_API_MINOR
@@ -37,9 +37,21 @@ local setupOk, setupErr = pcall(function()
 
     pidsPage = include("pages/pids.lua")
     ratesPage = include("pages/rates.lua")
-    filtersPage = include("pages/filters.lua")
+    globalFiltersPage = include("pages/globalFilters.lua")
+    profileFiltersPage = include("pages/profileFilters.lua")
     vtxPage = include("pages/vtx.lua")
     throttlePage = include("pages/throttle.lua")
+
+    -- filtersShared.lua carries mutable state (load phase, in-flight
+    -- multiplier-calc tracking) that MUST be the exact same instance for
+    -- both filter tabs -- loadScript()/dofile() have no require()-style
+    -- caching, so each tab loading it independently in its own file would
+    -- silently create two separate, un-synchronized copies. Load it here
+    -- exactly once (same pattern as mspMsgs/stateMod/safety/msp above) and
+    -- inject that one instance into both tabs.
+    local filtersShared = include("pages/filtersShared.lua")
+    globalFiltersPage.init(filtersShared)
+    profileFiltersPage.init(filtersShared)
 
     CRSF_FRAMETYPE_MSP_RESP = 0x7B
     -- Generous enough to cover a full multi-chunk SET request (the largest,
@@ -58,10 +70,18 @@ local setupOk, setupErr = pcall(function()
     -- through API 1.48 (Betaflight 2026.6.1).
     MIN_API_MAJOR, MIN_API_MINOR = 1, 44
 
-    pages = { pidsPage, ratesPage, filtersPage, vtxPage, throttlePage }
-    pageNames = { "PIDs", "Rates", "Filters", "VTX", "Motor" }
+    -- Global Filters and Profile Filters are two TABS but share ONE state
+    -- key ("filters") and one underlying MSP_FILTER_CONFIG buffer -- see
+    -- pages/filtersShared.lua's header comment for why: that buffer covers
+    -- both tabs' fields together, and giving each tab its own independent
+    -- copy would let one tab's save silently clobber the other's pending
+    -- edits. pageKeys/pageByKey are intentionally NOT parallel to pages/
+    -- pageNames here (5 state keys backing 6 tabs) -- nothing else in this
+    -- file assumes they're the same length.
+    pages = { pidsPage, ratesPage, globalFiltersPage, profileFiltersPage, vtxPage, throttlePage }
+    pageNames = { "PIDs", "Rates", "Global", "Profile", "VTX", "Motor" }
     pageKeys = { "pids", "rates", "filters", "vtx", "throttle" }
-    pageByKey = { pids = pidsPage, rates = ratesPage, filters = filtersPage, vtx = vtxPage, throttle = throttlePage }
+    pageByKey = { pids = pidsPage, rates = ratesPage, filters = globalFiltersPage, vtx = vtxPage, throttle = throttlePage }
 
     -- The SET command each page's beginSave() issues. Used to validate that a
     -- response actually belongs to the request we just made before treating it
@@ -464,13 +484,17 @@ local function clearCachedState()
     end
     -- state:clear() alone does not make pages reload: each page module only
     -- re-enters its "loading" phase from a module-local `phase` variable that
-    -- becomes "idle" via that page's own create(). Reset all five explicitly
+    -- becomes "idle" via that page's own create(). Reset all six explicitly
     -- so the next update() actually re-fetches fresh data for the new slot.
     -- (Throttle/Motor's fields all live in the per-PID-profile pidProfile_t,
-    -- same as PIDs and Filters, so it's just as profile-scoped as they are.)
+    -- same as PIDs and the Filters tabs, so it's just as profile-scoped.
+    -- Global/Profile Filters both call into filtersShared.lua's create(),
+    -- which is what actually resets the shared "filters" load state --
+    -- calling it from both is harmless/idempotent, see that file's header.)
     pidsPage.create()
     ratesPage.create()
-    filtersPage.create()
+    globalFiltersPage.create()
+    profileFiltersPage.create()
     vtxPage.create()
     throttlePage.create()
 end
