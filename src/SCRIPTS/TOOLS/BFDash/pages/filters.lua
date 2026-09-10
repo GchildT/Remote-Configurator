@@ -5,7 +5,6 @@ local ui = loadScript and assert(loadScript("/SCRIPTS/TOOLS/BFDash/ui.lua"))() o
 -- Explicit RGB colors rather than named constants -- see main.lua's note.
 local COLOR_WHITE = lcd.RGB(255, 255, 255)
 local COLOR_YELLOW = lcd.RGB(255, 210, 0)
-local COLOR_GREY = lcd.RGB(150, 150, 150)
 
 -- Confirmed against EdgeTX firmware source (radio/src/keys.h).
 local EVT_ROTARY_LEFT = 0x1003
@@ -21,27 +20,24 @@ local M = {}
 local FILTER_TYPE_NAMES = { [0] = "PT1", [1] = "BIQUAD", [2] = "PT2", [3] = "PT3" }
 local FILTER_TYPE_COUNT = 4
 
--- Every editable raw MSP field on this page, with its jog-dial range/step (or
--- isEnum for the filter-type dropdowns, cycled instead of ranged). All of
--- these read/write through mspMsgs.FILTER_CONFIG_FIELDS -- see that table's
--- comment for the verified byte offsets (Betaflight 4.5.5 and 2026.6.1,
--- byte-for-byte identical).
+-- Editable raw MSP fields on this page, with jog-dial range/step (or isEnum
+-- for the filter-type dropdowns, cycled instead of ranged). All read/write
+-- through mspMsgs.FILTER_CONFIG_FIELDS -- see that table's comment for the
+-- verified byte offsets (Betaflight 4.5.5 and 2026.6.1, byte-for-byte
+-- identical). Gyro/D-Term Notch and Yaw Lowpass are intentionally not
+-- exposed here (removed for screen space/clutter) -- their raw bytes are
+-- still round-tripped untouched by beginSave, so nothing on the FC changes
+-- for those fields.
 --
 -- No on/off toggle controls: every field is a plain always-visible row, tap
 -- to focus + dial to adjust. 0 disables the corresponding filter on the FC
--- itself (confirmed against betaflight-configurator source -- e.g.
--- gyroNotch1Enabled/rpmFilterEnabled/dynamicNotchEnabled/etc. all key off
--- exactly one field being non-zero) -- dialing a field down to 0 IS turning
--- that filter off, no separate switch needed.
+-- itself (confirmed against betaflight-configurator source), so dialing a
+-- field down to 0 IS turning that filter off -- no separate switch needed.
 local FIELD_SPECS = {
     gyroLpf1Hz = { min = 0, max = 4000, step = 5 },
     gyroLpf1Type = { isEnum = true },
     gyroLpf2Hz = { min = 0, max = 4000, step = 5 },
     gyroLpf2Type = { isEnum = true },
-    gyroNotch1Hz = { min = 0, max = 1000, step = 5 },
-    gyroNotch1Cutoff = { min = 0, max = 1000, step = 5 },
-    gyroNotch2Hz = { min = 0, max = 1000, step = 5 },
-    gyroNotch2Cutoff = { min = 0, max = 1000, step = 5 },
     rpmFilterHarmonics = { min = 0, max = 8, step = 1 },
     rpmFilterMinHz = { min = 0, max = 200, step = 5 },
     dynNotchCount = { min = 0, max = 5, step = 1 },
@@ -55,42 +51,33 @@ local FIELD_SPECS = {
     dtermLpf1DynExpo = { min = 0, max = 10, step = 1 },
     dtermLpf2Hz = { min = 0, max = 1000, step = 5 },
     dtermLpf2Type = { isEnum = true },
-    dtermNotchHz = { min = 0, max = 1000, step = 5 },
-    dtermNotchCutoff = { min = 0, max = 1000, step = 5 },
-    yawLowpassHz = { min = 0, max = 1000, step = 5 },
 }
 
--- Flat row list, 2 fields per row where they fit -- "Profile independent
--- Filter Settings" (gyro; all profile-independent in Betaflight itself).
-local LEFT_ROWS = {
+-- Single full-width column, 2 fields per row. D Term Lowpass 1 is special-
+-- cased below: it's the one filter with a real static/dynamic mode choice
+-- (confirmed against betaflight-configurator's dtermLowpassMode computed),
+-- inferred from whether the dynamic-min field is non-zero -- there is no
+-- separate stored "mode" field in the firmware.
+local ROWS = {
     { { key = "gyroLpf1Hz", label = "Gyro LP1 Cutoff" }, { key = "gyroLpf1Type", label = "Type" } },
     { { key = "gyroLpf2Hz", label = "Gyro LP2 Cutoff" }, { key = "gyroLpf2Type", label = "Type" } },
-    { { key = "gyroNotch1Hz", label = "Notch1 Center" }, { key = "gyroNotch1Cutoff", label = "Cutoff" } },
-    { { key = "gyroNotch2Hz", label = "Notch2 Center" }, { key = "gyroNotch2Cutoff", label = "Cutoff" } },
     { { key = "rpmFilterHarmonics", label = "RPM Harmonics" }, { key = "rpmFilterMinHz", label = "Min Hz" } },
     { { key = "dynNotchCount", label = "Dyn Notch Count" }, { key = "dynNotchQ", label = "Q(x100)" } },
     { { key = "dynNotchMinHz", label = "Dyn Notch Min Hz" }, { key = "dynNotchMaxHz", label = "Max Hz" } },
-}
-
--- "Profile dependent Filter Settings" (D term / yaw). D Term Lowpass 1 is
--- special-cased below: it's the one filter with a real static/dynamic mode
--- choice (confirmed against betaflight-configurator's dtermLowpassMode
--- computed), inferred from whether the dynamic-min field is non-zero --
--- there is no separate stored "mode" field in the firmware.
-local RIGHT_ROWS = {
     { { key = "dtermLpf2Hz", label = "D Term LP2 Cutoff" }, { key = "dtermLpf2Type", label = "Type" } },
-    { { key = "dtermNotchHz", label = "D Notch Center" }, { key = "dtermNotchCutoff", label = "Cutoff" } },
-    { { key = "yawLowpassHz", label = "Yaw LP Cutoff" } },
 }
 
--- Layout: content starts at y=66 (below tab bar + profile row) and must
--- finish above the footer at y=232. Worst case (D Term Lowpass 1 in dynamic
--- mode) is 7 rows on the left, 6 on the right -- comfortably fits at a
--- touch-friendly row height, unlike the toggle-based version this replaced.
-local CONTENT_TOP = 66
-local ROW_H = 22
-local COL_L_X, COL_L_W = 4, 228
-local COL_R_X, COL_R_W = 240, 236
+-- Layout: content starts at y=70 (below tab bar + profile row, with a
+-- deliberate few-px gap so it doesn't crowd the profile row) and must finish
+-- above the footer at y=232. Single full-width column now that Gyro/D-Term
+-- Notch and Yaw Lowpass are gone -- worst case (D Term Lowpass 1 in dynamic
+-- mode) is 9 rows total, each with a full 230px-wide half-column per field,
+-- comfortable room for these labels (the two-column layout this replaced
+-- only gave each field ~114px, too narrow and prone to visually overlapping
+-- text).
+local CONTENT_TOP = 70
+local ROW_H = 18
+local COL_X, COL_W = 6, 468
 
 local phase = "idle"
 local focusedKey = nil -- raw field key | "mode:dtermLpf1" | nil
@@ -241,19 +228,9 @@ function M.event(event, touchState, state, session, nowMs, armed)
         values = state:get(PAGE_KEY) -- re-fetch: the branches above may have staged new values
     end
 
-    lcd.drawText(COL_L_X, CONTENT_TOP - 14, "Profile independent", COLOR_GREY)
-    lcd.drawText(COL_R_X, CONTENT_TOP - 14, "Profile dependent", COLOR_GREY)
-
-    local y = CONTENT_TOP
-    for _, row in ipairs(LEFT_ROWS) do
-        drawRow(COL_L_X, COL_L_W, y, row, values, touchState, armed)
-        y = y + ROW_H
-    end
-
-    y = CONTENT_TOP
-    y = drawDtermLpf1(COL_R_X, COL_R_W, y, values, touchState, armed, state)
-    for _, row in ipairs(RIGHT_ROWS) do
-        drawRow(COL_R_X, COL_R_W, y, row, values, touchState, armed)
+    local y = drawDtermLpf1(COL_X, COL_W, CONTENT_TOP, values, touchState, armed, state)
+    for _, row in ipairs(ROWS) do
+        drawRow(COL_X, COL_W, y, row, values, touchState, armed)
         y = y + ROW_H
     end
 end

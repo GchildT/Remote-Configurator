@@ -39,16 +39,17 @@ for now.
 - **Rates** -- all 4 rate types (Betaflight/RaceFlight/KISS/Actual/
   QuickRates), Roll/Pitch/Yaw x Sensitivity/Max Rate/Expo grid, with the
   same per-type display scaling Configurator uses.
-- **Filters** -- two columns: Profile-independent (gyro) and Profile-
-  dependent (D-term/yaw) settings. Covers Gyro/D-Term Lowpass 1 & 2 (with
-  filter type), Gyro/D-Term Notch Filters, Gyro RPM Filter, Dynamic Notch
-  Filter, and Yaw Lowpass, all as plain always-visible fields -- no on/off
-  switches. Dialing a filter's cutoff/count/harmonics field down to 0 is
-  what disables it on the FC itself (Betaflight's own convention), so there's
-  nothing separate to toggle. D-Term Lowpass 1 also has a STATIC/DYNAMIC mode
-  row, matching Configurator's own behavior (there's no separate "mode" byte
-  in the firmware -- it's inferred from whether the dynamic-min field is
-  non-zero, the same way Configurator infers it).
+- **Filters** -- single-column list covering Gyro/D-Term Lowpass 1 & 2 (with
+  filter type), Gyro RPM Filter, and Dynamic Notch Filter, all as plain
+  always-visible fields -- no on/off switches. Dialing a filter's cutoff/
+  count/harmonics field down to 0 is what disables it on the FC itself
+  (Betaflight's own convention), so there's nothing separate to toggle.
+  D-Term Lowpass 1 also has a STATIC/DYNAMIC mode row, matching
+  Configurator's own behavior (there's no separate "mode" byte in the
+  firmware -- it's inferred from whether the dynamic-min field is non-zero,
+  the same way Configurator infers it). Gyro/D-Term Notch and Yaw Lowpass
+  were dropped from this tab to cut clutter and give the remaining fields
+  more room -- their values are left untouched on the FC, not reset.
 - **VTX** -- Band, Channel, Power.
 - **Motor** -- Throttle Boost, Motor Output Limit, Dynamic Idle Value, Vbat
   Sag Compensation %, Thrust Linearization % -- all plain fields, 0 = off for

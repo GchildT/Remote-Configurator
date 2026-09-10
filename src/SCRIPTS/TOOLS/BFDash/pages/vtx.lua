@@ -18,11 +18,12 @@ local FIELD_RANGE = {
     power = { min = POWER_MIN, max = POWER_MAX },
 }
 
--- Layout: content starts at y=66, below the tab bar + profile row (which end at
--- y=64). Three 20px rows at 70/100/130 stay clear of the footer at 232.
-local CONTENT_TOP = 66
+-- Layout: content starts a few px below the tab bar + profile row (which end
+-- at y=64), so it doesn't visually crowd it. Three 20px rows at 74/104/134
+-- stay clear of the footer at 232.
+local CONTENT_TOP = 70
 local ROW_H = 20
-local BAND_Y, CHANNEL_Y, POWER_Y = 70, 100, 130
+local BAND_Y, CHANNEL_Y, POWER_Y = 74, 104, 134
 
 local phase = "idle"
 local focusedField = nil -- "band" | "channel" | "power" | nil, jog-dial-editable

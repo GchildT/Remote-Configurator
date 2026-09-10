@@ -29,10 +29,11 @@ local ROWS = {
     { key = "thrustLinearization", label = "Thrust Linearization %", min = 0, max = 100, step = 1 },
 }
 
--- Layout: content starts at y=66, below the tab bar + profile row (which end
--- at y=64), and must finish above the footer at y=232. 5 rows * 26px = 130px
--- span y=66..196, comfortably clear of both boundaries.
-local ROW_TOP = 66
+-- Layout: content starts a few px below the tab bar + profile row (which end
+-- at y=64), so it doesn't visually crowd it, and must finish above the
+-- footer at y=232. 5 rows * 26px = 130px span y=70..200, comfortably clear
+-- of both boundaries.
+local ROW_TOP = 70
 local ROW_H = 26
 local LABEL_X = 4
 local VALUE_X = 320
