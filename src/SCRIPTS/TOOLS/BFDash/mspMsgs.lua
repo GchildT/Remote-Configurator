@@ -1,5 +1,6 @@
 local M = {}
 
+-- Command ids verified against Betaflight 4.5.5 src/main/msp/msp_protocol.h.
 M.CMD = {
     API_VERSION = 1,
     FC_VARIANT = 2,
@@ -8,6 +9,8 @@ M.CMD = {
     SET_VTX_CONFIG = 89,
     FILTER_CONFIG = 92,
     SET_FILTER_CONFIG = 93,
+    PID_ADVANCED = 94,
+    SET_PID_ADVANCED = 95,
     RC_TUNING = 111,
     SET_RC_TUNING = 204,
     SELECT_SETTING = 210,
@@ -52,14 +55,48 @@ M.RC_TUNING_FIELDS = {
     ratesType = { offset = 23, size = 1 },
 }
 
--- Offsets verified against Betaflight 4.5.5 src/main/msp/msp.c (case MSP_FILTER_CONFIG).
+-- Offsets verified against Betaflight 4.5.5 AND 2026.6.1 src/main/msp/msp.c
+-- (case MSP_FILTER_CONFIG -- byte-for-byte identical between the two).
 -- Note: byte 1 (C offset 0) is a legacy narrow gyro_lpf1_static_hz duplicate;
 -- we deliberately use the full-range U16 copy at offset 21 instead.
 M.FILTER_CONFIG_FIELDS = {
     dtermLpf1Hz = { offset = 2, size = 2 },
+    yawLowpassHz = { offset = 4, size = 2 },
+    gyroNotch1Hz = { offset = 6, size = 2 },
+    gyroNotch1Cutoff = { offset = 8, size = 2 },
+    dtermNotchHz = { offset = 10, size = 2 },
+    dtermNotchCutoff = { offset = 12, size = 2 },
+    gyroNotch2Hz = { offset = 14, size = 2 },
+    gyroNotch2Cutoff = { offset = 16, size = 2 },
+    dtermLpf1Type = { offset = 18, size = 1 },
     gyroLpf1Hz = { offset = 21, size = 2 },
     gyroLpf2Hz = { offset = 23, size = 2 },
+    gyroLpf1Type = { offset = 25, size = 1 },
+    gyroLpf2Type = { offset = 26, size = 1 },
     dtermLpf2Hz = { offset = 27, size = 2 },
+    dtermLpf2Type = { offset = 29, size = 1 },
+    dtermLpf1DynMinHz = { offset = 34, size = 2 },
+    dtermLpf1DynMaxHz = { offset = 36, size = 2 },
+    dynNotchQ = { offset = 40, size = 2 },
+    dynNotchMinHz = { offset = 42, size = 2 },
+    rpmFilterHarmonics = { offset = 44, size = 1 },
+    rpmFilterMinHz = { offset = 45, size = 1 },
+    dynNotchMaxHz = { offset = 46, size = 2 },
+    dtermLpf1DynExpo = { offset = 48, size = 1 },
+    dynNotchCount = { offset = 49, size = 1 },
+}
+
+-- Offsets verified against Betaflight 4.5.5 AND 2026.6.1 src/main/msp/msp.c
+-- (case MSP_PID_ADVANCED -- byte-for-byte identical between the two, aside
+-- from a same-offset field rename: abs_control_gain in 4.5.5 became a
+-- reserved/always-0 byte in 2026.6.1, not used by this project either way).
+-- 61-byte payload; round-tripped in full like SIMPLIFIED_TUNING_FIELDS.
+M.PID_ADVANCED_FIELDS = {
+    throttleBoost = { offset = 31, size = 1 },
+    motorOutputLimit = { offset = 48, size = 1 },
+    dynIdleMinRpm = { offset = 50, size = 1 },
+    vbatSagCompensation = { offset = 56, size = 1 },
+    thrustLinearization = { offset = 57, size = 1 },
 }
 
 function M.decodeApiVersion(payload)

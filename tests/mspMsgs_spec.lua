@@ -91,6 +91,55 @@ testkit.describe("mspMsgs.FILTER_CONFIG_FIELDS", function()
         testkit.assertEquals(mspBuffer.readField(buf, mspMsgs.FILTER_CONFIG_FIELDS.gyroLpf2Hz), 500, "gyroLpf2Hz")
         testkit.assertEquals(mspBuffer.readField(buf, mspMsgs.FILTER_CONFIG_FIELDS.dtermLpf2Hz), 150, "dtermLpf2Hz")
     end)
+
+    -- Notch/RPM/dynamic-notch/yaw/filter-type fields added for the extended
+    -- Filters tab (toggles + full editable set) -- offsets verified against
+    -- Betaflight 4.5.5 AND 2026.6.1 src/main/msp/msp.c (case
+    -- MSP_FILTER_CONFIG), byte-for-byte identical between the two.
+    testkit.it("reads notch/RPM/dynamic-notch/yaw/filter-type fields at their verified offsets, without disturbing neighbors", function()
+        local buf = string.rep("\0", 49)
+        local fields = {
+            yawLowpassHz = 100,
+            gyroNotch1Hz = 400, gyroNotch1Cutoff = 200,
+            dtermNotchHz = 260, dtermNotchCutoff = 160,
+            gyroNotch2Hz = 200, gyroNotch2Cutoff = 100,
+            dtermLpf1Type = 1, gyroLpf1Type = 2, gyroLpf2Type = 3,
+            dtermLpf2Type = 0,
+            dtermLpf1DynMinHz = 75, dtermLpf1DynMaxHz = 150,
+            dynNotchQ = 600, dynNotchMinHz = 90,
+            rpmFilterHarmonics = 3, rpmFilterMinHz = 75,
+            dynNotchMaxHz = 475,
+            dtermLpf1DynExpo = 5,
+            dynNotchCount = 3,
+        }
+        for key, value in pairs(fields) do
+            buf = mspBuffer.writeField(buf, mspMsgs.FILTER_CONFIG_FIELDS[key], value)
+        end
+        for key, value in pairs(fields) do
+            testkit.assertEquals(mspBuffer.readField(buf, mspMsgs.FILTER_CONFIG_FIELDS[key]), value, key)
+        end
+        testkit.assertEquals(#buf, 49, "buffer length unchanged by writes")
+    end)
+end)
+
+testkit.describe("mspMsgs.PID_ADVANCED_FIELDS", function()
+    testkit.it("reads throttle/motor fields at their verified offsets, without disturbing neighbors", function()
+        -- Offsets verified against Betaflight 4.5.5 AND 2026.6.1
+        -- src/main/msp/msp.c (case MSP_PID_ADVANCED), byte-for-byte identical
+        -- between the two -- 61-byte payload.
+        local buf = string.rep("\0", 61)
+        buf = mspBuffer.writeField(buf, mspMsgs.PID_ADVANCED_FIELDS.throttleBoost, 5)
+        buf = mspBuffer.writeField(buf, mspMsgs.PID_ADVANCED_FIELDS.motorOutputLimit, 100)
+        buf = mspBuffer.writeField(buf, mspMsgs.PID_ADVANCED_FIELDS.dynIdleMinRpm, 40)
+        buf = mspBuffer.writeField(buf, mspMsgs.PID_ADVANCED_FIELDS.vbatSagCompensation, 100)
+        buf = mspBuffer.writeField(buf, mspMsgs.PID_ADVANCED_FIELDS.thrustLinearization, 25)
+        testkit.assertEquals(mspBuffer.readField(buf, mspMsgs.PID_ADVANCED_FIELDS.throttleBoost), 5, "throttleBoost")
+        testkit.assertEquals(mspBuffer.readField(buf, mspMsgs.PID_ADVANCED_FIELDS.motorOutputLimit), 100, "motorOutputLimit")
+        testkit.assertEquals(mspBuffer.readField(buf, mspMsgs.PID_ADVANCED_FIELDS.dynIdleMinRpm), 40, "dynIdleMinRpm")
+        testkit.assertEquals(mspBuffer.readField(buf, mspMsgs.PID_ADVANCED_FIELDS.vbatSagCompensation), 100, "vbatSagCompensation")
+        testkit.assertEquals(mspBuffer.readField(buf, mspMsgs.PID_ADVANCED_FIELDS.thrustLinearization), 25, "thrustLinearization")
+        testkit.assertEquals(#buf, 61, "buffer length unchanged by writes")
+    end)
 end)
 
 testkit.describe("mspMsgs.encodeSelectSetting", function()

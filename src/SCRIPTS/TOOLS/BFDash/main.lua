@@ -19,7 +19,7 @@ local COLOR_GREY = lcd.RGB(130, 130, 130)
 -- instead of the radio silently doing nothing. Remove this wrapper once the
 -- script is confirmed loading cleanly on real hardware.
 local msp, mspMsgs, stateMod, safety
-local pidsPage, ratesPage, filtersPage, vtxPage
+local pidsPage, ratesPage, filtersPage, vtxPage, throttlePage
 local CRSF_FRAMETYPE_MSP_RESP
 local REQUEST_TIMEOUT_MS
 local MIN_API_MAJOR, MIN_API_MINOR
@@ -39,6 +39,7 @@ local setupOk, setupErr = pcall(function()
     ratesPage = include("pages/rates.lua")
     filtersPage = include("pages/filters.lua")
     vtxPage = include("pages/vtx.lua")
+    throttlePage = include("pages/throttle.lua")
 
     CRSF_FRAMETYPE_MSP_RESP = 0x7B
     -- Generous enough to cover a full multi-chunk SET request (the largest,
@@ -57,10 +58,10 @@ local setupOk, setupErr = pcall(function()
     -- through API 1.48 (Betaflight 2026.6.1).
     MIN_API_MAJOR, MIN_API_MINOR = 1, 44
 
-    pages = { pidsPage, ratesPage, filtersPage, vtxPage }
-    pageNames = { "PIDs", "Rates", "Filters", "VTX" }
-    pageKeys = { "pids", "rates", "filters", "vtx" }
-    pageByKey = { pids = pidsPage, rates = ratesPage, filters = filtersPage, vtx = vtxPage }
+    pages = { pidsPage, ratesPage, filtersPage, vtxPage, throttlePage }
+    pageNames = { "PIDs", "Rates", "Filters", "VTX", "Motor" }
+    pageKeys = { "pids", "rates", "filters", "vtx", "throttle" }
+    pageByKey = { pids = pidsPage, rates = ratesPage, filters = filtersPage, vtx = vtxPage, throttle = throttlePage }
 
     -- The SET command each page's beginSave() issues. Used to validate that a
     -- response actually belongs to the request we just made before treating it
@@ -70,6 +71,7 @@ local setupOk, setupErr = pcall(function()
         rates = mspMsgs.CMD.SET_RC_TUNING,
         filters = mspMsgs.CMD.SET_FILTER_CONFIG,
         vtx = mspMsgs.CMD.SET_VTX_CONFIG,
+        throttle = mspMsgs.CMD.SET_PID_ADVANCED,
     }
 
     app = {
@@ -290,6 +292,13 @@ local saveIndex = 0
 local saveWritten = nil -- keys whose SET was acknowledged, pending EEPROM confirm
 local saveError = nil
 
+-- How long the post-save "Saved!" footer confirmation stays up, so a
+-- successful save (whether it touched PIDs, Rates, Filters, VTX, or the
+-- Motor tab) is positively acknowledged rather than the footer just quietly
+-- going blank -- the only prior feedback was "Saving..." disappearing.
+local SAVE_CONFIRMATION_MS = 2500
+local saveConfirmedUntilMs = nil
+
 local function beginSaveFlow()
     saveQueue = {}
     for _, key in ipairs(pageKeys) do
@@ -306,6 +315,7 @@ local function beginSaveFlow()
     saveIndex = 0
     saveWritten = {}
     saveError = nil
+    saveConfirmedUntilMs = nil
     saveFlow = "sending"
 end
 
@@ -375,6 +385,7 @@ local function pumpSaveFlow(nowMs)
                     app.state:markClean(key)
                 end
                 saveError = nil
+                saveConfirmedUntilMs = nowMs + SAVE_CONFIRMATION_MS
                 saveFlow = "idle"
                 saveQueue = nil
                 saveWritten = nil
@@ -392,7 +403,7 @@ local function pumpSaveFlow(nowMs)
     return false
 end
 
-local function drawFooter(armed)
+local function drawFooter(armed, nowMs)
     if armed then
         return
     end
@@ -407,6 +418,8 @@ local function drawFooter(armed)
         lcd.drawText(220, FOOTER_Y + 12, "Saving...", COLOR_WHITE)
     elseif app.state:isAnyDirty() then
         lcd.drawText(220, FOOTER_Y + 12, "* unsaved changes", COLOR_WHITE)
+    elseif saveConfirmedUntilMs ~= nil and nowMs < saveConfirmedUntilMs then
+        lcd.drawText(220, FOOTER_Y + 12, "Saved!", COLOR_GREEN)
     end
 end
 
@@ -451,12 +464,15 @@ local function clearCachedState()
     end
     -- state:clear() alone does not make pages reload: each page module only
     -- re-enters its "loading" phase from a module-local `phase` variable that
-    -- becomes "idle" via that page's own create(). Reset all four explicitly
+    -- becomes "idle" via that page's own create(). Reset all five explicitly
     -- so the next update() actually re-fetches fresh data for the new slot.
+    -- (Throttle/Motor's fields all live in the per-PID-profile pidProfile_t,
+    -- same as PIDs and Filters, so it's just as profile-scoped as they are.)
     pidsPage.create()
     ratesPage.create()
     filtersPage.create()
     vtxPage.create()
+    throttlePage.create()
 end
 
 local function drawProfileRow(armed)
@@ -564,6 +580,7 @@ local function resetToInitialState()
     saveIndex = 0
     saveWritten = nil
     saveError = nil
+    saveConfirmedUntilMs = nil
 
     profileFlow = "idle"
     pendingSlot = nil
@@ -697,7 +714,7 @@ local function runBody(event, touchState)
         activePage.event(event, pageTouch, app.state, app.session, nowMs, armed)
     end
 
-    drawFooter(armed)
+    drawFooter(armed, nowMs)
 end
 
 -- IMPORTANT: EdgeTX's standalone-script host (radio/src/gui/colorlcd/
