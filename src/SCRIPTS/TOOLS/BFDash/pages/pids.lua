@@ -42,12 +42,12 @@ local SLIDER_MIN, SLIDER_MAX = 0, 250
 --
 -- Layout: content lives strictly between the chrome above (tab bar + profile
 -- row, end at y=64) and the footer below (starts at y=232 on a 272px-tall
--- screen). ROW_TOP has a few extra px of gap below the profile row (which
--- ends at y=64) so content doesn't visually crowd it. 8 slider rows * 20px
--- = 160px, so rows span y=70..230.
-local ROW_HEIGHT = 20
-local ROW_TOP = 70
-local SLIDER_H = 18
+-- screen). ROW_TOP leaves a blank gap below the profile row (which ends at
+-- y=64) for visual breathing room. 8 slider rows * 18px = 144px, so rows
+-- span y=86..230.
+local ROW_HEIGHT = 18
+local ROW_TOP = 86
+local SLIDER_H = 16
 local LABEL_X = 2
 local SLIDER_X, SLIDER_W = 74, 90
 local VALUE_X = 168

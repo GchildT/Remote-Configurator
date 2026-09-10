@@ -24,7 +24,7 @@ local pidsPage, ratesPage, globalFiltersPage, profileFiltersPage, vtxPage, throt
 local CRSF_FRAMETYPE_MSP_RESP
 local REQUEST_TIMEOUT_MS
 local MIN_API_MAJOR, MIN_API_MINOR
-local pages, pageNames, pageKeys, pageByKey, SET_CMD_BY_KEY, PROFILE_TYPE_PAGE_KEYS
+local pages, pageNames, pageKeys, pageByKey, SET_CMD_BY_KEY, PROFILE_TYPE_PAGE_KEYS, RATES_TAB_INDEX
 local app
 
 local setupOk, setupErr = pcall(function()
@@ -83,6 +83,7 @@ local setupOk, setupErr = pcall(function()
     pageNames = { "PIDs", "Rates", "Filters(G)", "Filters(P)", "VTX", "Motor" }
     pageKeys = { "pids", "rates", "filters", "vtx", "throttle" }
     pageByKey = { pids = pidsPage, rates = ratesPage, filters = globalFiltersPage, vtx = vtxPage, throttle = throttlePage }
+    RATES_TAB_INDEX = 2 -- position of ratesPage in `pages` above; the rate-profile selector only shows on this tab (see drawProfileRow/handleProfileTouch)
 
     -- Betaflight tracks PID profile and rate profile as two SEPARATE active
     -- indices (MSP_SELECT_SETTING's RATEPROFILE_MASK bit picks which one a
@@ -560,9 +561,14 @@ local function clearAllCachedState()
     clearCachedStateFor(pageKeys)
 end
 
+-- Confirmed against Betaflight firmware source (src/main/target/common_pre.h,
+-- both 4.5.5 and 2026.6.1): PID_PROFILE_COUNT and CONTROL_RATE_PROFILE_COUNT
+-- are both 4, not 3.
+local PROFILE_SLOT_COUNT = 4
+
 local function drawProfileSelector(labelX, boxX0, label, activeSlot, armed)
     lcd.drawText(labelX, PROFILE_Y, label, COLOR_WHITE)
-    for i = 1, 3 do
+    for i = 1, PROFILE_SLOT_COUNT do
         local x = boxX0 + (i - 1) * (PROFILE_BOX_W + PROFILE_BOX_GAP)
         local isActive = (i == activeSlot)
         local fill = COLOR_GREY
@@ -574,18 +580,25 @@ local function drawProfileSelector(labelX, boxX0, label, activeSlot, armed)
     end
 end
 
+-- Rate profile only affects the Rates tab (PIDs/Filters/Motor all depend on
+-- PID profile instead -- see PROFILE_TYPE_PAGE_KEYS), so its selector is
+-- only shown/tappable while that tab is active, decluttering every other
+-- tab. PID's selector stays visible everywhere since it's relevant on 4 of
+-- the 6 tabs.
 local function drawProfileRow(armed)
     if armed then
         return
     end
     drawProfileSelector(PID_LABEL_X, PID_BOX_X0, "PID:", app.pidProfileSlot, armed)
-    drawProfileSelector(RATE_LABEL_X, RATE_BOX_X0, "Rate:", app.rateProfileSlot, armed)
+    if app.activeTab == RATES_TAB_INDEX then
+        drawProfileSelector(RATE_LABEL_X, RATE_BOX_X0, "Rate:", app.rateProfileSlot, armed)
+    end
 end
 
--- Returns which slot (1-3) a tap x-position hit within a selector starting
--- at boxX0, or nil if it missed all three boxes.
+-- Returns which slot (1..PROFILE_SLOT_COUNT) a tap x-position hit within a
+-- selector starting at boxX0, or nil if it missed every box.
 local function hitSlot(tx, boxX0)
-    for i = 1, 3 do
+    for i = 1, PROFILE_SLOT_COUNT do
         local x = boxX0 + (i - 1) * (PROFILE_BOX_W + PROFILE_BOX_GAP)
         if tx >= x and tx < x + PROFILE_BOX_W then
             return i
@@ -621,7 +634,10 @@ local function handleProfileTouch(touchState, armed)
             app.session:request(mspMsgs.CMD.SELECT_SETTING, mspMsgs.encodeSelectSetting("pid", slot - 1))
             profileFlow = "selecting"
         end
-    else
+    elseif app.activeTab == RATES_TAB_INDEX then
+        -- Rate's selector isn't even drawn on other tabs -- ignore a tap
+        -- landing in that screen region elsewhere rather than acting on a
+        -- control the user can't see.
         local slot = hitSlot(tx, RATE_BOX_X0)
         if slot and slot ~= app.rateProfileSlot then
             pendingProfileType, pendingSlot = "rate", slot

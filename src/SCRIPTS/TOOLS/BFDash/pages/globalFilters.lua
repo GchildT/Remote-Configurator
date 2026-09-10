@@ -46,14 +46,14 @@ local ROWS = {
     { { key = "dynNotchMinHz", label = "Dyn Notch Min Hz" }, { key = "dynNotchMaxHz", label = "Max Hz" } },
 }
 
--- Layout: content starts a few px below the tab bar + profile row (which end
--- at y=64), so it doesn't crowd it, and must finish above the footer at
--- y=232. Slider row (20px) + spacer (10px) + 7 field rows * 18px = 156px,
--- span y=70..226.
-local CONTENT_TOP = 70
+-- Layout: content starts at y=86, leaving a blank gap below the tab bar +
+-- profile row (which end at y=64) for visual breathing room, and must
+-- finish above the footer at y=232. Slider row (20px) + spacer (6px) + 7
+-- field rows * 17px = 145px, span y=86..231.
+local CONTENT_TOP = 86
 local SLIDER_ROW_H = 20
-local SPACER_H = 10
-local ROW_H = 18
+local SPACER_H = 6
+local ROW_H = 17
 local COL_X, COL_W = 6, 468
 local SLIDER_X, SLIDER_W, SLIDER_H = 220, 180, 18
 local VALUE_X = 410

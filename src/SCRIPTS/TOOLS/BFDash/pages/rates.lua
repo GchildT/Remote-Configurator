@@ -79,19 +79,19 @@ for c, col in ipairs(COLUMNS) do
     end
 end
 
--- Layout: content starts at y=70 (below tab bar + profile row, with a few
--- extra px of gap so it doesn't visually crowd the profile row) and must
--- finish above the footer at y=232. Rate-type row, then column headers, then
--- 3 axis rows spaced to stay well clear of both boundaries.
-local CONTENT_TOP = 70
+-- Layout: content starts at y=86 (below tab bar + profile row, with a blank
+-- gap so it doesn't visually crowd the profile row) and must finish above
+-- the footer at y=232. Rate-type row, then column headers, then 3 axis rows
+-- spaced to stay well clear of both boundaries.
+local CONTENT_TOP = 86
 local TYPE_Y = CONTENT_TOP
 local TYPE_H = 18
 local TYPE_X, TYPE_W = 150, 100
-local HEADER_Y = 96
+local HEADER_Y = 112
 local AXIS_LABEL_X = 10
 local COLUMN_X = { 100, 230, 360 }
 local COLUMN_W = 110
-local ROW_Y = { 122, 154, 186 }
+local ROW_Y = { 138, 170, 202 }
 local ROW_H = 26
 
 local phase = "idle"

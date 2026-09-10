@@ -78,12 +78,14 @@ for now.
 ## PID and rate profiles
 
 Betaflight tracks the active **PID profile** and the active **rate profile**
-as two entirely separate slots (each is its own `MSP_SELECT_SETTING` call) --
-switching one does not switch the other. The profile strip below the tab bar
-reflects that with two independent 1/2/3 selectors, "PID:" and "Rate:". PIDs,
-both Filters tabs, and Motor all read/write the currently-active **PID**
-profile; Rates reads/writes the currently-active **rate** profile; VTX is
-global and isn't tied to either.
+as two entirely separate sets of 4 slots each (`PID_PROFILE_COUNT` and
+`CONTROL_RATE_PROFILE_COUNT` are both 4, confirmed against firmware source)
+-- each is its own `MSP_SELECT_SETTING` call, and switching one does not
+switch the other. The profile strip below the tab bar reflects that: a
+"PID: 1 2 3 4" selector is always visible (PIDs, both Filters tabs, and
+Motor all read/write the currently-active **PID** profile), while
+"Rate: 1 2 3 4" only appears while the Rates tab itself is active, since
+that's the only tab it affects. VTX is global and isn't tied to either.
 
 Tapping a profile number switches the flight controller's active profile
 immediately (so its settings can be previewed/edited), but that switch only
