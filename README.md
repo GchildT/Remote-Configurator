@@ -42,21 +42,22 @@ for now.
 - **Filters** -- two columns: Profile-independent (gyro) and Profile-
   dependent (D-term/yaw) settings. Covers Gyro/D-Term Lowpass 1 & 2 (with
   filter type), Gyro/D-Term Notch Filters, Gyro RPM Filter, Dynamic Notch
-  Filter, and Yaw Lowpass -- each an on/off toggle that expands to its
-  editable fields when on. D-Term Lowpass 1 also has a STATIC/DYNAMIC mode
-  switch, matching Configurator's own behavior (there's no separate "mode"
-  byte in the firmware -- it's inferred from whether the dynamic-min field
-  is non-zero, the same way Configurator infers it).
+  Filter, and Yaw Lowpass, all as plain always-visible fields -- no on/off
+  switches. Dialing a filter's cutoff/count/harmonics field down to 0 is
+  what disables it on the FC itself (Betaflight's own convention), so there's
+  nothing separate to toggle. D-Term Lowpass 1 also has a STATIC/DYNAMIC mode
+  row, matching Configurator's own behavior (there's no separate "mode" byte
+  in the firmware -- it's inferred from whether the dynamic-min field is
+  non-zero, the same way Configurator infers it).
 - **VTX** -- Band, Channel, Power.
 - **Motor** -- Throttle Boost, Motor Output Limit, Dynamic Idle Value, Vbat
-  Sag Compensation % (toggle), Thrust Linearization % (toggle).
+  Sag Compensation %, Thrust Linearization % -- all plain fields, 0 = off for
+  the last two.
 
 ## Editing
 
-- Tap a row (label, value, or toggle -- the whole row is one tap target) to
-  focus it, then turn the radio's jog dial to adjust; tap again to confirm/
-  unfocus. A toggle row can also be tapped directly to flip on/off without
-  focusing it first.
+- Tap a row (label or value -- the whole row is one tap target) to focus it,
+  then turn the radio's jog dial to adjust; tap again to confirm/unfocus.
 - Nothing is written to the flight controller until you press **Save**;
   editing only stages the change locally. **Save** writes every dirty page's
   changes and commits them to EEPROM in one flow; a green "Saved!"
@@ -84,11 +85,10 @@ for now.
 
 ## Known limitations
 
-- The Filters tab's rows are deliberately compact to fit two dense columns
-  in the available screen height; if every single filter category were
-  enabled at once, the bottom rows would crowd the footer. This hasn't come
-  up in practice (most configs only run a handful of these at a time) but
-  is a known tradeoff rather than something scrolling has been added for.
+- The Filters tab always shows every field (no collapsing), since D-Term
+  Lowpass 1's STATIC/DYNAMIC row is the one case where a field's meaning
+  genuinely depends on another field's value; everything else is just a
+  plain row.
 - Non-touch navigation (jog-dial-only, no tap-to-focus) isn't implemented --
   EdgeTX doesn't expose a portable "confirm" key to Lua scripts across all
   supported radios, so a touchscreen is currently required to select which

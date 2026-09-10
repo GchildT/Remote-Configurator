@@ -5,9 +5,7 @@ local ui = loadScript and assert(loadScript("/SCRIPTS/TOOLS/BFDash/ui.lua"))() o
 -- Explicit RGB colors rather than named constants -- see main.lua's note.
 local COLOR_WHITE = lcd.RGB(255, 255, 255)
 local COLOR_YELLOW = lcd.RGB(255, 210, 0)
-local COLOR_GREEN = lcd.RGB(30, 170, 60)
-local COLOR_GREY = lcd.RGB(110, 110, 110)
-local TOGGLE_COLORS = { on = COLOR_GREEN, off = COLOR_GREY, focused = COLOR_YELLOW, text = COLOR_WHITE }
+local COLOR_GREY = lcd.RGB(150, 150, 150)
 
 -- Confirmed against EdgeTX firmware source (radio/src/keys.h).
 local EVT_ROTARY_LEFT = 0x1003
@@ -28,6 +26,13 @@ local FILTER_TYPE_COUNT = 4
 -- these read/write through mspMsgs.FILTER_CONFIG_FIELDS -- see that table's
 -- comment for the verified byte offsets (Betaflight 4.5.5 and 2026.6.1,
 -- byte-for-byte identical).
+--
+-- No on/off toggle controls: every field is a plain always-visible row, tap
+-- to focus + dial to adjust. 0 disables the corresponding filter on the FC
+-- itself (confirmed against betaflight-configurator source -- e.g.
+-- gyroNotch1Enabled/rpmFilterEnabled/dynamicNotchEnabled/etc. all key off
+-- exactly one field being non-zero) -- dialing a field down to 0 IS turning
+-- that filter off, no separate switch needed.
 local FIELD_SPECS = {
     gyroLpf1Hz = { min = 0, max = 4000, step = 5 },
     gyroLpf1Type = { isEnum = true },
@@ -37,12 +42,12 @@ local FIELD_SPECS = {
     gyroNotch1Cutoff = { min = 0, max = 1000, step = 5 },
     gyroNotch2Hz = { min = 0, max = 1000, step = 5 },
     gyroNotch2Cutoff = { min = 0, max = 1000, step = 5 },
-    rpmFilterHarmonics = { min = 1, max = 8, step = 1 },
-    rpmFilterMinHz = { min = 50, max = 200, step = 5 },
+    rpmFilterHarmonics = { min = 0, max = 8, step = 1 },
+    rpmFilterMinHz = { min = 0, max = 200, step = 5 },
     dynNotchCount = { min = 0, max = 5, step = 1 },
-    dynNotchQ = { min = 100, max = 1000, step = 10 },
-    dynNotchMinHz = { min = 60, max = 250, step = 5 },
-    dynNotchMaxHz = { min = 200, max = 1000, step = 5 },
+    dynNotchQ = { min = 0, max = 1000, step = 10 },
+    dynNotchMinHz = { min = 0, max = 250, step = 5 },
+    dynNotchMaxHz = { min = 0, max = 1000, step = 5 },
     dtermLpf1Hz = { min = 0, max = 1000, step = 5 },
     dtermLpf1Type = { isEnum = true },
     dtermLpf1DynMinHz = { min = 0, max = 1000, step = 5 },
@@ -55,96 +60,40 @@ local FIELD_SPECS = {
     yawLowpassHz = { min = 0, max = 1000, step = 5 },
 }
 
--- Toggle-group model: each group's `primaryKey` is the raw field Betaflight
--- (and betaflight-configurator) treats as the on/off gate for that whole
--- filter -- 0 means off (confirmed against betaflight-configurator source,
--- FilterSubTab.vue: gyroNotch1Enabled/gyroLowpass2Enabled/rpmFilterEnabled/
--- dynamicNotchEnabled/etc. all key off exactly one field being non-zero).
--- `defaults` supplies a sane non-zero value for any of the group's fields
--- that are still 0 when the group is switched back on (a field the user
--- had already set keeps its value -- only genuinely-never-configured fields
--- get a default, since this page has no separate "remembered previous
--- value" cache the way Configurator's own UI does).
-local LEFT_GROUPS = { -- "Profile independent Filter Settings" (gyro)
-    {
-        id = "gyroLpf1", label = "Gyro Lowpass 1", primaryKey = "gyroLpf1Hz",
-        defaults = { gyroLpf1Hz = 100 },
-        fields = { { key = "gyroLpf1Hz", label = "Cutoff" }, { key = "gyroLpf1Type", label = "Type" } },
-    },
-    {
-        id = "gyroLpf2", label = "Gyro Lowpass 2", primaryKey = "gyroLpf2Hz",
-        defaults = { gyroLpf2Hz = 500 },
-        fields = { { key = "gyroLpf2Hz", label = "Cutoff" }, { key = "gyroLpf2Type", label = "Type" } },
-    },
-    {
-        id = "gyroNotch1", label = "Gyro Notch 1", primaryKey = "gyroNotch1Hz",
-        defaults = { gyroNotch1Hz = 400, gyroNotch1Cutoff = 200 },
-        fields = { { key = "gyroNotch1Hz", label = "Center" }, { key = "gyroNotch1Cutoff", label = "Cutoff" } },
-    },
-    {
-        id = "gyroNotch2", label = "Gyro Notch 2", primaryKey = "gyroNotch2Hz",
-        defaults = { gyroNotch2Hz = 200, gyroNotch2Cutoff = 100 },
-        fields = { { key = "gyroNotch2Hz", label = "Center" }, { key = "gyroNotch2Cutoff", label = "Cutoff" } },
-    },
-    {
-        id = "gyroRpm", label = "Gyro RPM Filter", primaryKey = "rpmFilterHarmonics",
-        defaults = { rpmFilterHarmonics = 3, rpmFilterMinHz = 100 },
-        fields = { { key = "rpmFilterHarmonics", label = "Harmonics" }, { key = "rpmFilterMinHz", label = "Min Hz" } },
-    },
-    {
-        id = "dynNotch", label = "Dynamic Notch", primaryKey = "dynNotchCount",
-        defaults = { dynNotchCount = 3, dynNotchQ = 500, dynNotchMinHz = 100, dynNotchMaxHz = 600 },
-        fields = {
-            { key = "dynNotchCount", label = "Count" }, { key = "dynNotchQ", label = "Q(x100)" },
-            { key = "dynNotchMinHz", label = "Min Hz" }, { key = "dynNotchMaxHz", label = "Max Hz" },
-        },
-    },
+-- Flat row list, 2 fields per row where they fit -- "Profile independent
+-- Filter Settings" (gyro; all profile-independent in Betaflight itself).
+local LEFT_ROWS = {
+    { { key = "gyroLpf1Hz", label = "Gyro LP1 Cutoff" }, { key = "gyroLpf1Type", label = "Type" } },
+    { { key = "gyroLpf2Hz", label = "Gyro LP2 Cutoff" }, { key = "gyroLpf2Type", label = "Type" } },
+    { { key = "gyroNotch1Hz", label = "Notch1 Center" }, { key = "gyroNotch1Cutoff", label = "Cutoff" } },
+    { { key = "gyroNotch2Hz", label = "Notch2 Center" }, { key = "gyroNotch2Cutoff", label = "Cutoff" } },
+    { { key = "rpmFilterHarmonics", label = "RPM Harmonics" }, { key = "rpmFilterMinHz", label = "Min Hz" } },
+    { { key = "dynNotchCount", label = "Dyn Notch Count" }, { key = "dynNotchQ", label = "Q(x100)" } },
+    { { key = "dynNotchMinHz", label = "Dyn Notch Min Hz" }, { key = "dynNotchMaxHz", label = "Max Hz" } },
 }
 
-local RIGHT_GROUPS = { -- "Profile dependent Filter Settings" (D term / yaw); D Term Lowpass 1 is special-cased below (static/dynamic mode)
-    {
-        id = "dtermLpf2", label = "D Term Lowpass 2", primaryKey = "dtermLpf2Hz",
-        defaults = { dtermLpf2Hz = 150 },
-        fields = { { key = "dtermLpf2Hz", label = "Cutoff" }, { key = "dtermLpf2Type", label = "Type" } },
-    },
-    {
-        id = "dtermNotch", label = "D Term Notch", primaryKey = "dtermNotchHz",
-        defaults = { dtermNotchHz = 260, dtermNotchCutoff = 160 },
-        fields = { { key = "dtermNotchHz", label = "Center" }, { key = "dtermNotchCutoff", label = "Cutoff" } },
-    },
-    {
-        id = "yawLpf", label = "Yaw Lowpass", primaryKey = "yawLowpassHz",
-        defaults = { yawLowpassHz = 100 },
-        fields = { { key = "yawLowpassHz", label = "Cutoff" } },
-    },
+-- "Profile dependent Filter Settings" (D term / yaw). D Term Lowpass 1 is
+-- special-cased below: it's the one filter with a real static/dynamic mode
+-- choice (confirmed against betaflight-configurator's dtermLowpassMode
+-- computed), inferred from whether the dynamic-min field is non-zero --
+-- there is no separate stored "mode" field in the firmware.
+local RIGHT_ROWS = {
+    { { key = "dtermLpf2Hz", label = "D Term LP2 Cutoff" }, { key = "dtermLpf2Type", label = "Type" } },
+    { { key = "dtermNotchHz", label = "D Notch Center" }, { key = "dtermNotchCutoff", label = "Cutoff" } },
+    { { key = "yawLowpassHz", label = "Yaw LP Cutoff" } },
 }
-
-local ALL_GROUPS = {}
-for _, g in ipairs(LEFT_GROUPS) do ALL_GROUPS[#ALL_GROUPS + 1] = g end
-for _, g in ipairs(RIGHT_GROUPS) do ALL_GROUPS[#ALL_GROUPS + 1] = g end
-
-local function findGroupById(id)
-    for _, g in ipairs(ALL_GROUPS) do
-        if g.id == id then return g end
-    end
-    return nil
-end
 
 -- Layout: content starts at y=66 (below tab bar + profile row) and must
--- finish above the footer at y=232 -- a tight budget for up to ~13 rows in
--- the busier column, so rows here are deliberately more compact (ROW_H=16)
--- than the rest of the app's 20-26px rows. If every single filter on this
--- page were simultaneously enabled the bottom rows would crowd the footer;
--- that's an accepted tradeoff for a realistic config (most craft only run
--- a handful of these at once, as in the reference layout this was built
--- against) rather than adding scrolling.
+-- finish above the footer at y=232. Worst case (D Term Lowpass 1 in dynamic
+-- mode) is 7 rows on the left, 6 on the right -- comfortably fits at a
+-- touch-friendly row height, unlike the toggle-based version this replaced.
 local CONTENT_TOP = 66
-local ROW_H = 16
+local ROW_H = 22
 local COL_L_X, COL_L_W = 4, 228
 local COL_R_X, COL_R_W = 240, 236
 
 local phase = "idle"
-local focusedKey = nil -- raw field key | "toggle:<groupId>" | "mode:dtermLpf1" | nil
+local focusedKey = nil -- raw field key | "mode:dtermLpf1" | nil
 
 local function decodeIntoState(state, rawBuffer)
     local values = { rawBuffer = rawBuffer }
@@ -175,41 +124,13 @@ local function beginSave(session, state)
 end
 M.beginSave = beginSave
 
-local function toggleGroup(group, values, state)
-    if values[group.primaryKey] ~= 0 then
-        state:setField(PAGE_KEY, group.primaryKey, 0)
-    else
-        for key, def in pairs(group.defaults) do
-            if values[key] == 0 then
-                state:setField(PAGE_KEY, key, def)
-            end
-        end
-    end
-end
-
--- D Term Lowpass 1 is the one filter with a real static/dynamic mode choice
--- (confirmed against betaflight-configurator's dtermLowpassMode/
--- dtermLowpassEnabled computeds): enabled = static OR dynamic cutoff is
--- non-zero; mode is read from whether the dynamic min is non-zero, not a
--- separate stored field -- Betaflight itself has no explicit mode byte.
-local function dtermLpf1Enabled(values)
-    return values.dtermLpf1Hz ~= 0 or values.dtermLpf1DynMinHz ~= 0
-end
-
 local function dtermLpf1IsDynamic(values)
     return values.dtermLpf1DynMinHz ~= 0
 end
 
-local function toggleDtermLpf1(values, state)
-    if dtermLpf1Enabled(values) then
-        state:setField(PAGE_KEY, "dtermLpf1Hz", 0)
-        state:setField(PAGE_KEY, "dtermLpf1DynMinHz", 0)
-        state:setField(PAGE_KEY, "dtermLpf1DynMaxHz", 0)
-    elseif values.dtermLpf1Hz == 0 and values.dtermLpf1DynMinHz == 0 then
-        state:setField(PAGE_KEY, "dtermLpf1Hz", 100) -- re-enable in static mode by default
-    end
-end
-
+-- Flips the mode: swaps which of static-cutoff vs dynamic-min/max is the
+-- non-zero (active) representation, seeding the other side with a sane
+-- default the first time it's used.
 local function setDtermLpf1Mode(values, state, dynamic)
     if dynamic then
         state:setField(PAGE_KEY, "dtermLpf1Hz", 0)
@@ -239,75 +160,33 @@ local function drawField(x, w, y, field, values, touchState, armed)
     end
 end
 
-local function drawFieldPair(x, w, y, fieldA, fieldB, values, touchState, armed)
+local function drawRow(x, w, y, row, values, touchState, armed)
     local halfW = w / 2
-    drawField(x, halfW, y, fieldA, values, touchState, armed)
-    if fieldB then
-        drawField(x + halfW, halfW, y, fieldB, values, touchState, armed)
+    drawField(x, row[2] and halfW or w, y, row[1], values, touchState, armed)
+    if row[2] then
+        drawField(x + halfW, halfW, y, row[2], values, touchState, armed)
     end
-end
-
-local function drawToggleRow(x, w, y, label, on, toggleFocusKey, values, touchState, armed, onToggle)
-    local isFocused = (focusedKey == toggleFocusKey)
-    local color = isFocused and COLOR_YELLOW or COLOR_WHITE
-    lcd.drawText(x, y, label, color)
-    local tw, th = ui.toggleSize()
-    ui.drawToggle(x + w - tw, y - 1, on, isFocused, TOGGLE_COLORS)
-    if not armed and ui.rowTapped(touchState, x, x + w, y, ROW_H) then
-        if touchState.x >= x + w - tw then
-            onToggle()
-        else
-            focusedKey = isFocused and nil or toggleFocusKey
-        end
-    end
-end
-
-local function drawGroup(x, w, y, group, values, touchState, armed, state)
-    local on = values[group.primaryKey] ~= 0
-    drawToggleRow(x, w, y, group.label, on, "toggle:" .. group.id, values, touchState, armed, function()
-        toggleGroup(group, values, state)
-    end)
-    y = y + ROW_H
-    if on then
-        local fields = group.fields
-        local i = 1
-        while i <= #fields do
-            drawFieldPair(x, w, y, fields[i], fields[i + 1], values, touchState, armed)
-            y = y + ROW_H
-            i = i + 2
-        end
-    end
-    return y
 end
 
 local function drawDtermLpf1(x, w, y, values, touchState, armed, state)
-    local on = dtermLpf1Enabled(values)
-    drawToggleRow(x, w, y, "D Term Lowpass 1", on, "toggle:dtermLpf1", values, touchState, armed, function()
-        toggleDtermLpf1(values, state)
-    end)
+    local dynamic = dtermLpf1IsDynamic(values)
+    local modeFocusKey = "mode:dtermLpf1"
+    local modeFocused = (focusedKey == modeFocusKey)
+    local halfW = w / 2
+    lcd.drawText(x, y, "D Term LP1 Mode: " .. (dynamic and "DYN" or "STATIC"), modeFocused and COLOR_YELLOW or COLOR_WHITE)
+    if not armed and ui.rowTapped(touchState, x, x + halfW, y, ROW_H) then
+        focusedKey = modeFocused and nil or modeFocusKey
+    end
+    drawField(x + halfW, halfW, y, { key = "dtermLpf1Type", label = "Type" }, values, touchState, armed)
     y = y + ROW_H
 
-    if on then
-        local dynamic = dtermLpf1IsDynamic(values)
-        local modeFocusKey = "mode:dtermLpf1"
-        local modeFocused = (focusedKey == modeFocusKey)
-        lcd.drawText(x, y, "Mode: " .. (dynamic and "DYNAMIC" or "STATIC"), modeFocused and COLOR_YELLOW or COLOR_WHITE)
-        if not armed and ui.rowTapped(touchState, x, x + w, y, ROW_H) then
-            focusedKey = modeFocused and nil or modeFocusKey
-        end
+    if dynamic then
+        drawRow(x, w, y, { { key = "dtermLpf1DynMinHz", label = "Min Hz" }, { key = "dtermLpf1DynMaxHz", label = "Max Hz" } }, values, touchState, armed)
         y = y + ROW_H
-
-        if dynamic then
-            drawFieldPair(x, w, y, { key = "dtermLpf1DynMinHz", label = "Min Hz" }, { key = "dtermLpf1DynMaxHz", label = "Max Hz" }, values, touchState, armed)
-            y = y + ROW_H
-            drawField(x, w, y, { key = "dtermLpf1DynExpo", label = "Dyn Curve Expo" }, values, touchState, armed)
-            y = y + ROW_H
-        else
-            drawField(x, w, y, { key = "dtermLpf1Hz", label = "Cutoff" }, values, touchState, armed)
-            y = y + ROW_H
-        end
-
-        drawField(x, w, y, { key = "dtermLpf1Type", label = "Type" }, values, touchState, armed)
+        drawField(x, w, y, { key = "dtermLpf1DynExpo", label = "Dyn Curve Expo" }, values, touchState, armed)
+        y = y + ROW_H
+    else
+        drawField(x, w, y, { key = "dtermLpf1Hz", label = "Cutoff" }, values, touchState, armed)
         y = y + ROW_H
     end
     return y
@@ -344,14 +223,6 @@ function M.event(event, touchState, state, session, nowMs, armed)
         local delta = (event == EVT_ROTARY_RIGHT) and 1 or -1
         if focusedKey == "mode:dtermLpf1" then
             setDtermLpf1Mode(values, state, not dtermLpf1IsDynamic(values))
-        elseif string.sub(focusedKey, 1, 7) == "toggle:" then
-            local id = string.sub(focusedKey, 8)
-            if id == "dtermLpf1" then
-                toggleDtermLpf1(values, state)
-            else
-                local group = findGroupById(id)
-                if group then toggleGroup(group, values, state) end
-            end
         else
             local spec = FIELD_SPECS[focusedKey]
             if spec then
@@ -374,14 +245,16 @@ function M.event(event, touchState, state, session, nowMs, armed)
     lcd.drawText(COL_R_X, CONTENT_TOP - 14, "Profile dependent", COLOR_GREY)
 
     local y = CONTENT_TOP
-    for _, group in ipairs(LEFT_GROUPS) do
-        y = drawGroup(COL_L_X, COL_L_W, y, group, values, touchState, armed, state)
+    for _, row in ipairs(LEFT_ROWS) do
+        drawRow(COL_L_X, COL_L_W, y, row, values, touchState, armed)
+        y = y + ROW_H
     end
 
     y = CONTENT_TOP
     y = drawDtermLpf1(COL_R_X, COL_R_W, y, values, touchState, armed, state)
-    for _, group in ipairs(RIGHT_GROUPS) do
-        y = drawGroup(COL_R_X, COL_R_W, y, group, values, touchState, armed, state)
+    for _, row in ipairs(RIGHT_ROWS) do
+        drawRow(COL_R_X, COL_R_W, y, row, values, touchState, armed)
+        y = y + ROW_H
     end
 end
 
