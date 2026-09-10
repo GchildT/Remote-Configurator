@@ -1,5 +1,19 @@
 # Betaflight Settings Dashboard (EdgeTX LUA Tools Script) Implementation Plan
 
+> **Status note (kept for history, not current scope):** this plan covers
+> only the original implementation phase (Tasks 1-N below, all completed).
+> Everything since -- the entire round of real-hardware bug fixes, jog-dial
+> editing, live PID preview, PID/Filters relabel-and-reorder to match
+> Configurator, RadioMaster/480x320+ compatibility, the MSP-API-version
+> compatibility gate (superseding the 4.5.x-only check this plan describes),
+> automatic FC disconnect/reconnect handling, the Motor tab, the expanded
+> Filters tab (toggles, notch filters, dynamic notch, STATIC/DYNAMIC D-term
+> mode), and post-save confirmation -- happened after this plan was executed
+> and is **not** reflected below. **[README.md](../../../README.md) at the
+> repo root is the current source of truth**; use `git log` for the full
+> history of what was built afterward. Read this file only for the
+> historical reasoning and task breakdown behind the original build.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a standalone EdgeTX Tools LUA script for the Jumper T15 that reads and writes Betaflight 4.5.x settings (PID simplified-tuning sliders, rate profiles, gyro/D-term filter cutoffs, VTX config) over MSP-over-CRSF telemetry, with an arm-lock safety interlock and an explicit Save/Cancel flow.

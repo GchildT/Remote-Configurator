@@ -2,6 +2,18 @@
 
 Date: 2026-09-09
 
+> **Status note (kept for history, not current scope):** this spec captures
+> the *original* design as authored before implementation began. Scope has
+> grown substantially since through real-hardware bench testing and follow-up
+> requests: jog-dial editing, a live PID preview, dynamic notch filter tuning
+> (explicitly out-of-scope below), a full Motor/Throttle tab, an API-version
+> compatibility gate (not the 4.5.x-only firmware-version check described
+> here), automatic flight-controller disconnect/reconnect handling, and a
+> post-save confirmation. **[README.md](../../../README.md) at the repo root
+> is the current source of truth for what the script actually does and
+> supports** -- read this file only for the historical reasoning behind the
+> original design decisions.
+
 ## Context
 
 Jumper T15 radio, EdgeTX 2.9+ (color LCD, 480x272), ExpressLRS (CRSF) link to
