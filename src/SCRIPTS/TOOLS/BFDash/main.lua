@@ -12,6 +12,7 @@ local COLOR_RED = lcd.RGB(220, 30, 30)
 local COLOR_GREEN = lcd.RGB(30, 170, 60)
 local COLOR_BLUE = lcd.RGB(40, 110, 220)
 local COLOR_GREY = lcd.RGB(130, 130, 130)
+local COLOR_ORANGE = lcd.RGB(230, 140, 20)
 
 -- DIAGNOSTIC WRAPPER: everything that can fail at load time (module includes,
 -- constructing the app table) runs inside a pcall. If ANY of it throws, init()
@@ -23,7 +24,7 @@ local pidsPage, ratesPage, globalFiltersPage, profileFiltersPage, vtxPage, throt
 local CRSF_FRAMETYPE_MSP_RESP
 local REQUEST_TIMEOUT_MS
 local MIN_API_MAJOR, MIN_API_MINOR
-local pages, pageNames, pageKeys, pageByKey, SET_CMD_BY_KEY
+local pages, pageNames, pageKeys, pageByKey, SET_CMD_BY_KEY, PROFILE_TYPE_PAGE_KEYS
 local app
 
 local setupOk, setupErr = pcall(function()
@@ -83,6 +84,19 @@ local setupOk, setupErr = pcall(function()
     pageKeys = { "pids", "rates", "filters", "vtx", "throttle" }
     pageByKey = { pids = pidsPage, rates = ratesPage, filters = globalFiltersPage, vtx = vtxPage, throttle = throttlePage }
 
+    -- Betaflight tracks PID profile and rate profile as two SEPARATE active
+    -- indices (MSP_SELECT_SETTING's RATEPROFILE_MASK bit picks which one a
+    -- given SELECT_SETTING call addresses) -- they are not the same "profile
+    -- slot" and switching one does not switch the other. This table says
+    -- which cached page data depends on which: PIDs/Filters/Motor all read
+    -- fields out of the currently-active pidProfile_t, Rates reads out of
+    -- the currently-active controlRateConfig_t, and VTX depends on neither
+    -- (a single global config, not profile-scoped at all).
+    PROFILE_TYPE_PAGE_KEYS = {
+        pid = { "pids", "filters", "throttle" },
+        rate = { "rates" },
+    }
+
     -- The SET command each page's beginSave() issues. Used to validate that a
     -- response actually belongs to the request we just made before treating it
     -- as a successful write (see the msp session's shared-session hazard).
@@ -101,7 +115,10 @@ local setupOk, setupErr = pcall(function()
         session = msp.new(REQUEST_TIMEOUT_MS),
         arm = safety.new(),
         state = stateMod.new(),
-        profileSlot = 1,
+        -- Separate PID and rate profile slots -- see PROFILE_TYPE_PAGE_KEYS
+        -- above for why these are tracked independently, not as one "profile".
+        pidProfileSlot = 1,
+        rateProfileSlot = 1,
     }
 end)
 
@@ -122,9 +139,16 @@ end)
 local TAB_Y, TAB_H = 20, 24
 local PROFILE_Y = 44
 local PROFILE_ROW_H = 20
-local PROFILE_BOX_W = 30
-local PROFILE_BOX_GAP = 6
-local PROFILE_BOX_X0 = 60
+local PROFILE_BOX_W = 26
+local PROFILE_BOX_GAP = 5
+-- PID and rate profile selectors sit side by side on the one profile row
+-- (rather than stacked on two rows) so every page keeps its existing content
+-- band starting at y=70 -- see PROFILE_TYPE_PAGE_KEYS above for why they're
+-- two independent selectors instead of one.
+local PID_LABEL_X = 4
+local PID_BOX_X0 = 40
+local RATE_LABEL_X = 244
+local RATE_BOX_X0 = 288
 local FOOTER_H = 40
 local FOOTER_Y = LCD_H - FOOTER_H
 local BTN_SAVE_X, BTN_SAVE_W = 0, 100
@@ -303,8 +327,17 @@ end
 --------------------------------------------------------------------------------
 -- Declared here (ahead of the profile section below) because handleFooterTouch
 -- needs to see it: a Lua closure only captures locals already in scope.
-local profileFlow = "idle" -- idle | selectPid | selectRate
+local profileFlow = "idle" -- idle | selecting
+local pendingProfileType = nil -- "pid" | "rate"
 local pendingSlot = nil
+
+-- A PID/rate profile switch takes effect on the FC immediately (SELECT_
+-- SETTING is a RAM-only change), but does NOT survive a power cycle until
+-- an EEPROM_WRITE happens -- so it's tracked here as its own kind of
+-- "unsaved change", separate from isDirty() on any page's staged field
+-- edits, and Save must commit it too. See runBody's footer text and
+-- handleFooterTouch's Save-tap gate below.
+local profileSwitchPending = false
 
 local saveFlow = "idle" -- idle | sending | waitSet | eeprom
 local saveQueue = nil
@@ -328,7 +361,12 @@ local function beginSaveFlow()
             saveQueue[#saveQueue + 1] = key
         end
     end
-    if #saveQueue == 0 then
+    -- An empty queue still needs to proceed straight to the EEPROM_WRITE
+    -- step (pumpSaveFlow's "sending" branch already does that whenever
+    -- saveQueue[saveIndex] is nil) when a profile switch is the only thing
+    -- that needs persisting -- otherwise Save would silently do nothing for
+    -- a switch-with-no-other-edits.
+    if #saveQueue == 0 and not profileSwitchPending then
         saveQueue = nil
         return
     end
@@ -404,6 +442,11 @@ local function pumpSaveFlow(nowMs)
                 for _, key in ipairs(saveWritten) do
                     app.state:markClean(key)
                 end
+                -- Whatever PID/rate profile is active right now (it may
+                -- have been switched since the last EEPROM_WRITE) is now
+                -- persisted too -- this EEPROM_WRITE covers the FC's entire
+                -- current RAM state, not just the fields this tool staged.
+                profileSwitchPending = false
                 saveError = nil
                 saveConfirmedUntilMs = nowMs + SAVE_CONFIRMATION_MS
                 saveFlow = "idle"
@@ -436,8 +479,12 @@ local function drawFooter(armed, nowMs)
         lcd.drawText(220, FOOTER_Y + 12, saveError, COLOR_RED)
     elseif saveFlow ~= "idle" then
         lcd.drawText(220, FOOTER_Y + 12, "Saving...", COLOR_WHITE)
+    elseif app.state:isAnyDirty() and profileSwitchPending then
+        lcd.drawText(220, FOOTER_Y + 12, "* unsaved changes + profile switch", COLOR_ORANGE)
     elseif app.state:isAnyDirty() then
         lcd.drawText(220, FOOTER_Y + 12, "* unsaved changes", COLOR_WHITE)
+    elseif profileSwitchPending then
+        lcd.drawText(220, FOOTER_Y + 12, "Profile switched -- Save to keep", COLOR_ORANGE)
     elseif saveConfirmedUntilMs ~= nil and nowMs < saveConfirmedUntilMs then
         lcd.drawText(220, FOOTER_Y + 12, "Saved!", COLOR_GREEN)
     end
@@ -458,7 +505,7 @@ local function handleFooterTouch(touchState, armed)
         -- Don't start a save on top of an in-flight page load: the msp session
         -- handles one request at a time and request() throws while pending.
         if saveFlow == "idle" and profileFlow == "idle"
-            and not app.session:isPending() and app.state:isAnyDirty() then
+            and not app.session:isPending() and (app.state:isAnyDirty() or profileSwitchPending) then
             beginSaveFlow()
         end
     elseif tx >= BTN_CANCEL_X and tx < BTN_CANCEL_X + BTN_CANCEL_W then
@@ -471,45 +518,80 @@ local function handleFooterTouch(touchState, armed)
     end
 end
 
--- Profile-slot selector: a row of three tappable "1"/"2"/"3" labels below the
--- tab bar. Switching slots issues two separate MSP_SELECT_SETTING requests
--- (one for the PID profile, one for the rate profile) sequenced through the
--- single-request-at-a-time msp session, then invalidates all four cached
--- state keys so each page's update() re-fetches fresh data for the new slot.
--- (profileFlow / pendingSlot are declared above, next to the save-flow state.)
+-- Profile selectors: two independent rows of three tappable "1"/"2"/"3"
+-- boxes side by side on the one profile strip -- PID profile on the left,
+-- rate profile on the right (see PROFILE_TYPE_PAGE_KEYS above for why these
+-- are separate). Switching either issues ONE MSP_SELECT_SETTING request
+-- (not two), then invalidates only the cached page keys that actually
+-- depend on that profile type, so switching rate profile doesn't force a
+-- pointless PIDs/Filters/Motor reload and vice versa.
+-- (profileFlow / pendingProfileType / pendingSlot are declared above, next
+-- to the save-flow state.)
 
-local function clearCachedState()
-    for _, key in ipairs(pageKeys) do
-        app.state:clear(key)
+local function reloadPageKey(key)
+    if key == "pids" then
+        pidsPage.create()
+    elseif key == "rates" then
+        ratesPage.create()
+    elseif key == "filters" then
+        -- Both filter tabs share filtersShared.lua's load state -- calling
+        -- both create()s is harmless/idempotent, see that file's header.
+        globalFiltersPage.create()
+        profileFiltersPage.create()
+    elseif key == "vtx" then
+        vtxPage.create()
+    elseif key == "throttle" then
+        throttlePage.create()
     end
-    -- state:clear() alone does not make pages reload: each page module only
-    -- re-enters its "loading" phase from a module-local `phase` variable that
-    -- becomes "idle" via that page's own create(). Reset all six explicitly
-    -- so the next update() actually re-fetches fresh data for the new slot.
-    -- (Throttle/Motor's fields all live in the per-PID-profile pidProfile_t,
-    -- same as PIDs and the Filters tabs, so it's just as profile-scoped.
-    -- Global/Profile Filters both call into filtersShared.lua's create(),
-    -- which is what actually resets the shared "filters" load state --
-    -- calling it from both is harmless/idempotent, see that file's header.)
-    pidsPage.create()
-    ratesPage.create()
-    globalFiltersPage.create()
-    profileFiltersPage.create()
-    vtxPage.create()
-    throttlePage.create()
+end
+
+-- state:clear() alone does not make a page reload: each page module only
+-- re-enters its "loading" phase from a module-local `phase` variable that
+-- becomes "idle" via that page's own create() -- reloadPageKey is what
+-- actually does that, for whichever keys are passed in.
+local function clearCachedStateFor(keys)
+    for _, key in ipairs(keys) do
+        app.state:clear(key)
+        reloadPageKey(key)
+    end
+end
+
+local function clearAllCachedState()
+    clearCachedStateFor(pageKeys)
+end
+
+local function drawProfileSelector(labelX, boxX0, label, activeSlot, armed)
+    lcd.drawText(labelX, PROFILE_Y, label, COLOR_WHITE)
+    for i = 1, 3 do
+        local x = boxX0 + (i - 1) * (PROFILE_BOX_W + PROFILE_BOX_GAP)
+        local isActive = (i == activeSlot)
+        local fill = COLOR_GREY
+        if isActive then
+            fill = profileSwitchPending and COLOR_ORANGE or COLOR_BLUE
+        end
+        lcd.drawFilledRectangle(x, PROFILE_Y, PROFILE_BOX_W, PROFILE_ROW_H, fill)
+        lcd.drawText(x + 8, PROFILE_Y, tostring(i), COLOR_WHITE)
+    end
 end
 
 local function drawProfileRow(armed)
     if armed then
         return
     end
-    lcd.drawText(4, PROFILE_Y, "Profile:", COLOR_WHITE)
+    drawProfileSelector(PID_LABEL_X, PID_BOX_X0, "PID:", app.pidProfileSlot, armed)
+    drawProfileSelector(RATE_LABEL_X, RATE_BOX_X0, "Rate:", app.rateProfileSlot, armed)
+end
+
+-- Returns which slot (1-3) a tap x-position hit within a selector starting
+-- at boxX0, or nil if it missed all three boxes.
+local function hitSlot(tx, boxX0)
     for i = 1, 3 do
-        local x = PROFILE_BOX_X0 + (i - 1) * (PROFILE_BOX_W + PROFILE_BOX_GAP)
-        local isActive = (i == app.profileSlot)
-        lcd.drawFilledRectangle(x, PROFILE_Y, PROFILE_BOX_W, PROFILE_ROW_H, isActive and COLOR_BLUE or COLOR_GREY)
-        lcd.drawText(x + 10, PROFILE_Y, tostring(i), COLOR_WHITE)
+        local x = boxX0 + (i - 1) * (PROFILE_BOX_W + PROFILE_BOX_GAP)
+        if tx >= x and tx < x + PROFILE_BOX_W then
+            return i
+        end
     end
+    return nil
 end
 
 local function handleProfileTouch(touchState, armed)
@@ -532,53 +614,49 @@ local function handleProfileTouch(touchState, armed)
         return -- avoid reentrant session:request() while a page's own load is in flight
     end
     local tx = touchState.x
-    for i = 1, 3 do
-        local x = PROFILE_BOX_X0 + (i - 1) * (PROFILE_BOX_W + PROFILE_BOX_GAP)
-        if tx >= x and tx < x + PROFILE_BOX_W and i ~= app.profileSlot then
-            pendingSlot = i
-            app.session:request(mspMsgs.CMD.SELECT_SETTING, mspMsgs.encodeSelectSetting("pid", i - 1))
-            profileFlow = "selectPid"
-            return
+    if tx < RATE_LABEL_X then
+        local slot = hitSlot(tx, PID_BOX_X0)
+        if slot and slot ~= app.pidProfileSlot then
+            pendingProfileType, pendingSlot = "pid", slot
+            app.session:request(mspMsgs.CMD.SELECT_SETTING, mspMsgs.encodeSelectSetting("pid", slot - 1))
+            profileFlow = "selecting"
+        end
+    else
+        local slot = hitSlot(tx, RATE_BOX_X0)
+        if slot and slot ~= app.rateProfileSlot then
+            pendingProfileType, pendingSlot = "rate", slot
+            app.session:request(mspMsgs.CMD.SELECT_SETTING, mspMsgs.encodeSelectSetting("rate", slot - 1))
+            profileFlow = "selecting"
         end
     end
 end
 
 local function pumpProfileFlow(nowMs)
-    if profileFlow == "selectPid" then
-        local status = app.session:poll(nowMs)
-        if status == "done" then
-            local cmd = app.session:result()
-            if cmd == mspMsgs.CMD.SELECT_SETTING then
-                app.session:request(mspMsgs.CMD.SELECT_SETTING, mspMsgs.encodeSelectSetting("rate", pendingSlot - 1))
-                profileFlow = "selectRate"
-            else
-                profileFlow = "idle"
-                pendingSlot = nil
-            end
-        elseif status == "timeout" or status == "error" then
-            app.session:reset()
-            profileFlow = "idle"
-            pendingSlot = nil
-        end
-        return true
-    elseif profileFlow == "selectRate" then
-        local status = app.session:poll(nowMs)
-        if status == "done" then
-            local cmd = app.session:result()
-            if cmd == mspMsgs.CMD.SELECT_SETTING then
-                app.profileSlot = pendingSlot
-                clearCachedState()
-            end
-            profileFlow = "idle"
-            pendingSlot = nil
-        elseif status == "timeout" or status == "error" then
-            app.session:reset()
-            profileFlow = "idle"
-            pendingSlot = nil
-        end
-        return true
+    if profileFlow ~= "selecting" then
+        return false
     end
-    return false
+    local status = app.session:poll(nowMs)
+    if status == "done" then
+        local cmd = app.session:result()
+        if cmd == mspMsgs.CMD.SELECT_SETTING then
+            if pendingProfileType == "pid" then
+                app.pidProfileSlot = pendingSlot
+            else
+                app.rateProfileSlot = pendingSlot
+            end
+            clearCachedStateFor(PROFILE_TYPE_PAGE_KEYS[pendingProfileType])
+            -- Takes effect on the FC immediately (RAM), but needs Save to
+            -- survive a power cycle -- see profileSwitchPending's own comment.
+            profileSwitchPending = true
+        end
+        profileFlow = "idle"
+        pendingProfileType, pendingSlot = nil, nil
+    elseif status == "timeout" or status == "error" then
+        app.session:reset()
+        profileFlow = "idle"
+        pendingProfileType, pendingSlot = nil, nil
+    end
+    return true
 end
 
 -- Returns the whole app to exactly the state it's in right after init() --
@@ -595,9 +673,10 @@ end
 local function resetToInitialState()
     app.session:reset()
     app.arm = safety.new()
-    app.profileSlot = 1
+    app.pidProfileSlot = 1
+    app.rateProfileSlot = 1
     app.activeTab = 1
-    clearCachedState()
+    clearAllCachedState()
 
     saveFlow = "idle"
     saveQueue = nil
@@ -607,7 +686,9 @@ local function resetToInitialState()
     saveConfirmedUntilMs = nil
 
     profileFlow = "idle"
+    pendingProfileType = nil
     pendingSlot = nil
+    profileSwitchPending = false
 
     staleSinceMs = nil
     app.connection = "connecting"

@@ -75,15 +75,36 @@ for now.
   Sag Compensation %, Thrust Linearization % -- all plain fields, 0 = off for
   the last two.
 
+## PID and rate profiles
+
+Betaflight tracks the active **PID profile** and the active **rate profile**
+as two entirely separate slots (each is its own `MSP_SELECT_SETTING` call) --
+switching one does not switch the other. The profile strip below the tab bar
+reflects that with two independent 1/2/3 selectors, "PID:" and "Rate:". PIDs,
+both Filters tabs, and Motor all read/write the currently-active **PID**
+profile; Rates reads/writes the currently-active **rate** profile; VTX is
+global and isn't tied to either.
+
+Tapping a profile number switches the flight controller's active profile
+immediately (so its settings can be previewed/edited), but that switch only
+lives in the FC's RAM until you press **Save** -- an `EEPROM_WRITE` is what
+makes it survive a power cycle, the same as it works in Betaflight
+Configurator. Until you save, the just-switched profile's box shows orange
+instead of blue and the footer reads "Profile switched -- Save to keep" (if
+you never save, the FC just reverts to whichever profile was last actually
+persisted, next time it powers up).
+
 ## Editing
 
 - Tap a row (label or value -- the whole row is one tap target) to focus it,
   then turn the radio's jog dial to adjust; tap again to confirm/unfocus.
 - Nothing is written to the flight controller until you press **Save**;
   editing only stages the change locally. **Save** writes every dirty page's
-  changes and commits them to EEPROM in one flow; a green "Saved!"
-  confirmation shows in the footer for a couple seconds once that's
-  confirmed. **Cancel** discards unsaved edits.
+  changes, persists the active PID/rate profile selection (see above), and
+  commits all of it to EEPROM in one flow; a green "Saved!" confirmation
+  shows in the footer for a couple seconds once that's confirmed. **Cancel**
+  discards unsaved field edits (it does not revert an already-switched
+  profile back).
 - Editing is blocked outright while the flight controller reports ARMED.
 
 ## Safety / connection behavior
