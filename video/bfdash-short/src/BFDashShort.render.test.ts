@@ -5,7 +5,7 @@ import { renderStill, selectComposition } from "@remotion/renderer";
 import path from "node:path";
 import { existsSync, mkdirSync } from "node:fs";
 
-const SAMPLE_FRAMES = [0, 150, 400, 700, 850, 899];
+const SAMPLE_FRAMES = [0, 200, 400, 700, 850, 899];
 
 describe("BFDashShort render", () => {
   it("renders every sample frame without throwing", async () => {
