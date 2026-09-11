@@ -41,7 +41,7 @@ for now.
   same per-type display scaling Configurator uses.
 - **Filters(G) -- "Global Filters"** -- the profile-INDEPENDENT half of
   Betaflight's Filter Settings screen (`gyroConfig()` is one global struct
-  shared by all 3 PID profiles). Order matches Configurator's own screen:
+  shared by all 4 PID profiles). Order matches Configurator's own screen:
   Gyro Filter Multiplier (a graphical slider, styled like the PIDs page's
   sliders), Gyro Lowpass 1 & 2 (with filter type), Gyro Notch Filters 1 & 2,
   Gyro RPM Filter, and Dynamic Notch Filter.
@@ -124,21 +124,32 @@ persisted, next time it powers up).
   dropped -- and it automatically retries the connection handshake. A
   different flight controller can be plugged in without restarting the
   script.
-- This tool has only been bench-tested (props off). No in-flight testing of
-  settings changes has been performed.
+
+## Testing status
+
+This tool has only been bench-tested (props off) -- no in-flight testing of
+settings changes has been performed. Within that scope, it's been verified
+on real hardware (a Jumper T15 and RadioMaster radios, against Betaflight
+firmware from 4.5.5 through 2026.6.1) across a full round of fixes and
+feature additions: connecting, editing and saving every tab (PIDs with the
+live preview, Rates, both Filters tabs including the Filter Multiplier
+sliders, VTX, Motor), disconnect/reconnect between different flight
+controllers, and switching PID/rate profiles with Save persisting the
+switch across a power cycle -- all confirmed working as expected by a
+project maintainer as of this writing. The tool is now being shared with a
+wider group of pilots for further feedback -- if you hit something odd,
+please open an issue with what radio/firmware you're on and what you saw.
 
 ## Known limitations
 
-- The Filters tab always shows every field (no collapsing), since D-Term
-  Lowpass 1's STATIC/DYNAMIC row is the one case where a field's meaning
-  genuinely depends on another field's value; everything else is just a
-  plain row.
+- Both Filters(G)/Filters(P) tabs always show every field (no collapsing),
+  since D-Term Lowpass 1's STATIC/DYNAMIC row is the one case where a
+  field's meaning genuinely depends on another field's value; everything
+  else is just a plain row.
 - Non-touch navigation (jog-dial-only, no tap-to-focus) isn't implemented --
   EdgeTX doesn't expose a portable "confirm" key to Lua scripts across all
   supported radios, so a touchscreen is currently required to select which
   field the dial edits.
-- Saving a change back to the FC and confirming it survives a power cycle
-  has not yet been end-to-end verified by a project maintainer on hardware.
 
 ## Installation
 
