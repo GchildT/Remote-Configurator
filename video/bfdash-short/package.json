@@ -10,12 +10,13 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@remotion/cli": "^4.0.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
-    "remotion": "^4.0.0",
-    "@remotion/cli": "^4.0.0"
+    "remotion": "^4.0.0"
   },
   "devDependencies": {
+    "@remotion/bundler": "^4.0.523",
     "@remotion/renderer": "^4.0.0",
     "@testing-library/react": "^16.0.0",
     "@types/node": "^20.0.0",
