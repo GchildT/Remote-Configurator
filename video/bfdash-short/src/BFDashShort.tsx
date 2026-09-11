@@ -5,6 +5,9 @@ import { Caption } from "./components/Caption";
 import { PhotoBeat } from "./components/PhotoBeat";
 import { TitleCard } from "./components/TitleCard";
 import { OutroCard } from "./components/OutroCard";
+import { BeatIcon } from "./components/BeatIcon";
+
+const CAPTION_DELAY_AFTER_ICON = 10;
 
 export const BFDashShort: React.FC = () => {
   return (
@@ -33,7 +36,11 @@ export const BFDashShort: React.FC = () => {
                 calloutRect={scene.calloutRect}
                 dim={scene.type === "payoff" || scene.type === "cta"}
               />
-              <Caption text={scene.caption} startFrame={0} />
+              {scene.icon && <BeatIcon icon={scene.icon} />}
+              <Caption
+                text={scene.caption}
+                startFrame={scene.icon ? CAPTION_DELAY_AFTER_ICON : 0}
+              />
             </>
           ) : null}
         </Sequence>

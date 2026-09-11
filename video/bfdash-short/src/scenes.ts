@@ -1,5 +1,6 @@
 export type SceneType = "hook" | "reveal" | "feature" | "payoff" | "cta" | "outro";
 export type RevealVariant = "caption" | "title";
+export type BeatIconType = "sliders" | "grid" | "gauge" | "funnel" | "signal" | "propeller";
 
 export interface CalloutRect {
   xPct: number;
@@ -18,6 +19,7 @@ export interface Scene {
   image?: string;
   calloutRect?: CalloutRect;
   revealVariant?: RevealVariant;
+  icon?: BeatIconType;
 }
 
 export const scenes: Scene[] = [
@@ -54,6 +56,7 @@ export const scenes: Scene[] = [
     image: "photos/pids.jpg",
     caption: "8 PID tuning sliders — matched to Configurator",
     calloutRect: { xPct: 9, yPct: 40, wPct: 30, hPct: 37 },
+    icon: "sliders",
   },
   {
     id: "feature-pids-numbers",
@@ -63,6 +66,7 @@ export const scenes: Scene[] = [
     image: "photos/pids.jpg",
     caption: "Live P / I / D / D-Min / FF preview",
     calloutRect: { xPct: 50, yPct: 40, wPct: 44, hPct: 20 },
+    icon: "grid",
   },
   {
     id: "feature-rates-data",
@@ -72,6 +76,7 @@ export const scenes: Scene[] = [
     image: "photos/rates.jpg",
     caption: "All 4 rate types, every axis",
     calloutRect: { xPct: 6, yPct: 40, wPct: 69, hPct: 26 },
+    icon: "gauge",
   },
   {
     id: "feature-filters",
@@ -81,6 +86,7 @@ export const scenes: Scene[] = [
     image: "photos/filters-p.jpg",
     caption: "Gyro + D-term filters — global & per-profile",
     calloutRect: { xPct: 9, yPct: 37, wPct: 80, hPct: 30 },
+    icon: "funnel",
   },
   {
     id: "feature-vtx",
@@ -90,6 +96,7 @@ export const scenes: Scene[] = [
     image: "photos/vtx.jpg",
     caption: "Band, channel, power",
     calloutRect: { xPct: 11, yPct: 34, wPct: 15, hPct: 17 },
+    icon: "signal",
   },
   {
     id: "feature-motor",
@@ -99,6 +106,7 @@ export const scenes: Scene[] = [
     image: "photos/motor.jpg",
     caption: "Throttle boost, idle, sag comp",
     calloutRect: { xPct: 11, yPct: 34, wPct: 56, hPct: 26 },
+    icon: "propeller",
   },
   {
     id: "payoff",
