@@ -139,17 +139,19 @@ end)
 --------------------------------------------------------------------------------
 local TAB_Y, TAB_H = 20, 24
 local PROFILE_Y = 44
-local PROFILE_ROW_H = 20
-local PROFILE_BOX_W = 26
-local PROFILE_BOX_GAP = 5
+local PROFILE_ROW_H = 26
+local PROFILE_BOX_W = 34
+local PROFILE_BOX_GAP = 8
+local PROFILE_TEXT_Y_OFFSET = 6 -- vertically centers text in the taller PROFILE_ROW_H box
 -- PID and rate profile selectors sit side by side on the one profile row
 -- (rather than stacked on two rows) so every page keeps its existing content
--- band starting at y=70 -- see PROFILE_TYPE_PAGE_KEYS above for why they're
--- two independent selectors instead of one.
+-- band starting at y=86 (or y=70 on pages that don't need the extra gap) --
+-- see PROFILE_TYPE_PAGE_KEYS above for why they're two independent
+-- selectors instead of one.
 local PID_LABEL_X = 4
-local PID_BOX_X0 = 40
-local RATE_LABEL_X = 244
-local RATE_BOX_X0 = 288
+local PID_BOX_X0 = 46
+local RATE_LABEL_X = 226
+local RATE_BOX_X0 = 270
 local FOOTER_H = 40
 local FOOTER_Y = LCD_H - FOOTER_H
 local BTN_SAVE_X, BTN_SAVE_W = 0, 100
@@ -567,7 +569,7 @@ end
 local PROFILE_SLOT_COUNT = 4
 
 local function drawProfileSelector(labelX, boxX0, label, activeSlot, armed)
-    lcd.drawText(labelX, PROFILE_Y, label, COLOR_WHITE)
+    lcd.drawText(labelX, PROFILE_Y + PROFILE_TEXT_Y_OFFSET, label, COLOR_WHITE)
     for i = 1, PROFILE_SLOT_COUNT do
         local x = boxX0 + (i - 1) * (PROFILE_BOX_W + PROFILE_BOX_GAP)
         local isActive = (i == activeSlot)
@@ -576,7 +578,7 @@ local function drawProfileSelector(labelX, boxX0, label, activeSlot, armed)
             fill = profileSwitchPending and COLOR_ORANGE or COLOR_BLUE
         end
         lcd.drawFilledRectangle(x, PROFILE_Y, PROFILE_BOX_W, PROFILE_ROW_H, fill)
-        lcd.drawText(x + 8, PROFILE_Y, tostring(i), COLOR_WHITE)
+        lcd.drawText(x + PROFILE_BOX_W / 2 - 4, PROFILE_Y + PROFILE_TEXT_Y_OFFSET, tostring(i), COLOR_WHITE)
     end
 end
 
