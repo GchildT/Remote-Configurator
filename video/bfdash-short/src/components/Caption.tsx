@@ -2,7 +2,11 @@ import React from "react";
 import { useCurrentFrame } from "remotion";
 import { getWordStartFrame, getWordStyle, splitIntoLines } from "./Caption.timing";
 
-export const Caption: React.FC<{ text: string; startFrame: number }> = ({ text, startFrame }) => {
+export const Caption: React.FC<{ text: string; startFrame: number; position?: "top" | "bottom" }> = ({
+  text,
+  startFrame,
+  position = "top",
+}) => {
   const frame = useCurrentFrame() - startFrame;
   const lines = splitIntoLines(text);
   let wordsBeforeThisLine = 0;
@@ -13,7 +17,7 @@ export const Caption: React.FC<{ text: string; startFrame: number }> = ({ text, 
         position: "absolute",
         left: "8%",
         right: "8%",
-        bottom: "54%",
+        ...(position === "top" ? { bottom: "54%" } : { top: "54%" }),
         display: "flex",
         flexDirection: "column",
         gap: 24,

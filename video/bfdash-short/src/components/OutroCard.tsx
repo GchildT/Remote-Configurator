@@ -14,7 +14,7 @@ export const OutroCard: React.FC<{ caption: string }> = ({ caption }) => {
 
   return (
     <AbsoluteFill style={{ backgroundColor: "#05070d" }}>
-      <AbsoluteFill style={{ alignItems: "center", justifyContent: "center", top: "-15%" }}>
+      <AbsoluteFill style={{ top: 0, height: "50%", alignItems: "center", justifyContent: "center" }}>
         <Img
           src={staticFile("brand/pfp-neontag-blue.png")}
           style={{
@@ -23,7 +23,7 @@ export const OutroCard: React.FC<{ caption: string }> = ({ caption }) => {
           }}
         />
       </AbsoluteFill>
-      <Caption text={caption} startFrame={0} />
+      <Caption text={caption} startFrame={0} position="bottom" />
     </AbsoluteFill>
   );
 };

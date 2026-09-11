@@ -121,6 +121,6 @@ export const scenes: Scene[] = [
     type: "outro",
     startFrame: 840,
     durationFrames: 60,
-    caption: "Subscribe for more FPV builds & tuning\nLink in bio · comments open",
+    caption: "Subscribe for more FPV\nLink in Bio - Comments Open",
   },
 ];
