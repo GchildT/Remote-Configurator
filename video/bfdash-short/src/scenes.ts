@@ -60,8 +60,8 @@ export const scenes: Scene[] = [
     durationFrames: 75,
     image: "photos/pids.jpg",
     caption: "8 PID tuning sliders — matched to Configurator",
-    focalPoint: { xPct: 30, yPct: 50 },
-    calloutRect: { xPct: 5, yPct: 20, wPct: 45, hPct: 60 },
+    focalPoint: { xPct: 24, yPct: 52 },
+    calloutRect: { xPct: 4, yPct: 32, wPct: 40, hPct: 40 },
   },
   {
     id: "feature-pids-numbers",
@@ -71,7 +71,7 @@ export const scenes: Scene[] = [
     image: "photos/pids.jpg",
     caption: "Live P / I / D / D-Min / FF preview",
     focalPoint: { xPct: 72, yPct: 45 },
-    calloutRect: { xPct: 50, yPct: 15, wPct: 45, hPct: 70 },
+    calloutRect: { xPct: 44, yPct: 35, wPct: 52, hPct: 22 },
   },
   {
     id: "feature-rates-data",
@@ -80,8 +80,8 @@ export const scenes: Scene[] = [
     durationFrames: 75,
     image: "photos/rates.jpg",
     caption: "All 4 rate types, every axis",
-    focalPoint: { xPct: 50, yPct: 65 },
-    calloutRect: { xPct: 15, yPct: 45, wPct: 70, hPct: 45 },
+    focalPoint: { xPct: 44, yPct: 38 },
+    calloutRect: { xPct: 14, yPct: 30, wPct: 58, hPct: 32 },
   },
   {
     id: "feature-filters",
@@ -90,8 +90,8 @@ export const scenes: Scene[] = [
     durationFrames: 75,
     image: "photos/filters-p.jpg",
     caption: "Gyro + D-term filters — global & per-profile",
-    focalPoint: { xPct: 50, yPct: 45 },
-    calloutRect: { xPct: 10, yPct: 15, wPct: 80, hPct: 70 },
+    focalPoint: { xPct: 56, yPct: 46 },
+    calloutRect: { xPct: 15, yPct: 28, wPct: 78, hPct: 36 },
   },
   {
     id: "feature-vtx",
@@ -100,8 +100,8 @@ export const scenes: Scene[] = [
     durationFrames: 75,
     image: "photos/vtx.jpg",
     caption: "Band, channel, power",
-    focalPoint: { xPct: 30, yPct: 40 },
-    calloutRect: { xPct: 8, yPct: 30, wPct: 24, hPct: 24 },
+    focalPoint: { xPct: 43, yPct: 40 },
+    calloutRect: { xPct: 20, yPct: 22, wPct: 45, hPct: 28 },
   },
   {
     id: "feature-motor",
@@ -110,8 +110,8 @@ export const scenes: Scene[] = [
     durationFrames: 75,
     image: "photos/motor.jpg",
     caption: "Throttle boost, idle, sag comp",
-    focalPoint: { xPct: 50, yPct: 45 },
-    calloutRect: { xPct: 10, yPct: 25, wPct: 80, hPct: 55 },
+    focalPoint: { xPct: 49, yPct: 40 },
+    calloutRect: { xPct: 8, yPct: 22, wPct: 82, hPct: 35 },
   },
   {
     id: "payoff",
@@ -120,7 +120,7 @@ export const scenes: Scene[] = [
     durationFrames: 90,
     image: "photos/motor.jpg",
     caption: "Change it in the field.\nNo goggles. No laptop. No USB.",
-    focalPoint: { xPct: 50, yPct: 45 },
+    focalPoint: { xPct: 49, yPct: 40 },
   },
   {
     id: "cta",
@@ -129,7 +129,7 @@ export const scenes: Scene[] = [
     durationFrames: 60,
     image: "photos/motor.jpg",
     caption: "Tested on Jumper T15 & RadioMaster TX15 —\ntry it, tell me what breaks.",
-    focalPoint: { xPct: 50, yPct: 45 },
+    focalPoint: { xPct: 49, yPct: 40 },
   },
   {
     id: "outro",
