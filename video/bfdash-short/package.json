@@ -1,0 +1,29 @@
+{
+  "name": "bfdash-short",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "remotion studio",
+    "build": "remotion render BFDashShort out/bfdash-short.mp4",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "remotion": "^4.0.0",
+    "@remotion/cli": "^4.0.0"
+  },
+  "devDependencies": {
+    "@remotion/renderer": "^4.0.0",
+    "@testing-library/react": "^16.0.0",
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "jsdom": "^25.0.0",
+    "sharp": "^0.33.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}
