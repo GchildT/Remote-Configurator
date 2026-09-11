@@ -128,7 +128,7 @@ export const scenes: Scene[] = [
     startFrame: 780,
     durationFrames: 60,
     image: "photos/motor.jpg",
-    caption: "Tested on Jumper T15 & RadioMaster TX15 — try it, tell me what breaks.",
+    caption: "Tested on Jumper T15 & RadioMaster TX15 —\ntry it, tell me what breaks.",
     focalPoint: { xPct: 50, yPct: 45 },
   },
   {
