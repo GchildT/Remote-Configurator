@@ -1,5 +1,5 @@
 import React from "react";
-import { AbsoluteFill, Audio, Sequence, staticFile } from "remotion";
+import { AbsoluteFill, Audio, interpolate, Sequence, staticFile } from "remotion";
 import { scenes } from "./scenes";
 import { Caption } from "./components/Caption";
 import { PhotoBeat } from "./components/PhotoBeat";
@@ -9,7 +9,12 @@ import { OutroCard } from "./components/OutroCard";
 export const BFDashShort: React.FC = () => {
   return (
     <AbsoluteFill style={{ backgroundColor: "#05070d" }}>
-      <Audio src={staticFile("audio/hook-track.mp3")} />
+      <Audio
+        src={staticFile("audio/hook-track.mp3")}
+        volume={(f) =>
+          interpolate(f, [885, 900], [1, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" })
+        }
+      />
       {scenes.map((scene) => (
         <Sequence key={scene.id} from={scene.startFrame} durationInFrames={scene.durationFrames}>
           {scene.type === "outro" ? (

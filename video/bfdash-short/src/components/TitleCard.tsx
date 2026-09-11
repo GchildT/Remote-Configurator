@@ -21,6 +21,8 @@ export const TitleCard: React.FC<{ title: string; subtitle: string }> = ({ title
     { extrapolateLeft: "clamp", extrapolateRight: "clamp", easing: Easing.out(Easing.cubic) },
   );
 
+  const logoScale = interpolate(logoProgress, [0, 1], [0.85, 1]);
+
   return (
     <AbsoluteFill
       style={{
@@ -36,7 +38,7 @@ export const TitleCard: React.FC<{ title: string; subtitle: string }> = ({ title
         style={{
           width: "30%",
           opacity: logoProgress,
-          transform: `scale(${interpolate(logoProgress, [0, 1], [0.85, 1])})`,
+          transform: `scale(${logoScale})`,
         }}
       />
       <div
@@ -47,7 +49,7 @@ export const TitleCard: React.FC<{ title: string; subtitle: string }> = ({ title
           color: "#ffffff",
           textShadow: "0 0 24px rgba(56, 214, 255, 0.85), 0 0 4px rgba(56, 214, 255, 0.9)",
           opacity: logoProgress,
-          transform: `scale(${interpolate(logoProgress, [0, 1], [0.85, 1])})`,
+          transform: `scale(${logoScale})`,
           textAlign: "center",
         }}
       >
