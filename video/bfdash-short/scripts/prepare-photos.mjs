@@ -6,7 +6,7 @@ const SOURCE_DIR = "C:/Users/gchil/Downloads/Compressed/Photos-1-001_2";
 const OUT_DIR = path.resolve("public/photos");
 
 // { output filename (without .jpg): [source filename, rotation degrees
-//   clockwise to apply, crop] }
+//   clockwise to apply] }
 //
 // These source JPEGs all carry EXIF Orientation: 1 (no embedded rotation) --
 // verified with sharp's metadata() -- so sharp's auto-orient mode
@@ -24,94 +24,36 @@ const OUT_DIR = path.resolve("public/photos");
 // held the opposite way and needed -90deg instead (a plain +90 left it
 // upside-down).
 //
-// `crop` is a fraction-based extract box (percent of the ROTATED image's
-// width/height, i.e. as measured on the previously-shipped uncropped
-// output) applied BEFORE the resize step. It exists to fix a bug where
-// PhotoBeat's objectFit:"cover" in a 2160x3840 portrait frame only shows
-// the center ~42% of these landscape (~4:3) photos, slicing off left-edge
-// setting labels ("Sensitivity" -> "tivity", etc).
-//
-// The crop boxes were chosen empirically (rotate -> Read the output ->
-// eyeball the screen's content bounding box as a fraction of the frame ->
-// compute pixel values -> extract -> Read again to confirm no label text
-// is cut at the left/right edge) using this rule of thumb: cover's
-// left/right crop amount for a source of pixel-height H depends on H, not
-// on the crop's width -- a wider crop of the SAME height doesn't lose any
-// more of a given label. So each box below (a) keeps close to the full
-// available screen height (more height = less width discarded by `cover`)
-// and (b) trims width only where it's genuinely dead space (phone
-// background, unused menu real estate, or a second data column that isn't
-// this photo's primary subject) so the remaining content register fits
-// inside the ~42-80% band `cover` ends up showing once the aspect ratio is
-// less extreme. Per-scene `focalPoint`/`calloutRect` values in
-// src/scenes.ts were re-derived against these new crops (see Fix 2 in the
-// final review).
+// Deliberately NO crop here: these are the full, uncropped source photos
+// (background, phone bezel and all), just rotated upright and downsized.
+// PhotoBeat displays them via objectFit:"contain" in the bottom half of
+// the frame, so the whole photo is always visible with no cut-off content
+// -- an earlier attempt to pre-crop them to "fix" objectFit:"cover"
+// clipping was abandoned in favor of this simpler, guaranteed-uncropped
+// approach.
 const PHOTOS = {
-  "tools-menu": [
-    "IMG20260911082542.jpg",
-    -90,
-    { left: 0, top: 10, width: 97, height: 80 },
-  ],
-  "pids": [
-    "IMG20260911082554.jpg",
-    90,
-    { left: 6, top: 11, width: 91, height: 89 },
-  ],
-  "rates": [
-    "IMG20260911082608.jpg",
-    90,
-    { left: 0, top: 12, width: 43, height: 88 },
-  ],
-  "filters-p": [
-    "IMG20260911082634.jpg",
-    90,
-    { left: 0, top: 12, width: 52, height: 88 },
-  ],
-  "vtx": [
-    "IMG20260911082643.jpg",
-    90,
-    { left: 0, top: 13, width: 45, height: 87 },
-  ],
-  "motor": [
-    "IMG20260911082653.jpg",
-    90,
-    { left: 8, top: 13, width: 47, height: 87 },
-  ],
+  "tools-menu": ["IMG20260911082542.jpg", -90],
+  "pids": ["IMG20260911082554.jpg", 90],
+  "rates": ["IMG20260911082608.jpg", 90],
+  "filters-p": ["IMG20260911082634.jpg", 90],
+  "vtx": ["IMG20260911082643.jpg", 90],
+  "motor": ["IMG20260911082653.jpg", 90],
 };
 
 async function main() {
   await mkdir(OUT_DIR, { recursive: true });
 
-  for (const [outName, [sourceName, rotation, crop]] of Object.entries(PHOTOS)) {
+  for (const [outName, [sourceName, rotation]] of Object.entries(PHOTOS)) {
     const sourcePath = path.join(SOURCE_DIR, sourceName);
     const outPath = path.join(OUT_DIR, `${outName}.jpg`);
 
-    // Rotate first so the crop fractions below (measured against the
-    // rotated, right-side-up image) land in the right place, then read
-    // back the actual rotated pixel dimensions -- sharp's `.rotate()` on a
-    // 90/-90deg swaps width/height, and we don't want to hardcode that.
-    const rotated = sharp(sourcePath).rotate(rotation);
-    const { width: rotatedWidth, height: rotatedHeight } = await rotated
-      .clone()
-      .toBuffer({ resolveWithObject: true })
-      .then((r) => r.info);
-
-    const extractBox = {
-      left: Math.round((crop.left / 100) * rotatedWidth),
-      top: Math.round((crop.top / 100) * rotatedHeight),
-      width: Math.round((crop.width / 100) * rotatedWidth),
-      height: Math.round((crop.height / 100) * rotatedHeight),
-    };
-
-    await rotated
-      .extract(extractBox)
+    await sharp(sourcePath)
+      .rotate(rotation)
       .resize({ width: 3840, withoutEnlargement: true })
       .jpeg({ quality: 92 })
       .toFile(outPath);
 
-    console.log(
-      `${sourceName} -> ${outName}.jpg (rotated ${rotation}deg, cropped ${JSON.stringify(extractBox)})`,
-    );
+    console.log(`${sourceName} -> ${outName}.jpg (rotated ${rotation}deg)`);
   }
 }
 

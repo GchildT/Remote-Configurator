@@ -25,12 +25,11 @@ export const BFDashShort: React.FC = () => {
             <AbsoluteFill style={{ backgroundColor: "#05070d" }}>
               <Caption text={scene.caption} startFrame={0} />
             </AbsoluteFill>
-          ) : scene.image && scene.focalPoint ? (
+          ) : scene.image ? (
             <>
               <PhotoBeat
                 image={scene.image}
                 durationFrames={scene.durationFrames}
-                focalPoint={scene.focalPoint}
                 calloutRect={scene.calloutRect}
                 dim={scene.type === "payoff" || scene.type === "cta"}
               />

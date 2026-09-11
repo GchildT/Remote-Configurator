@@ -1,11 +1,6 @@
 export type SceneType = "hook" | "reveal" | "feature" | "payoff" | "cta" | "outro";
 export type RevealVariant = "caption" | "title";
 
-export interface FocalPoint {
-  xPct: number;
-  yPct: number;
-}
-
 export interface CalloutRect {
   xPct: number;
   yPct: number;
@@ -21,7 +16,6 @@ export interface Scene {
   caption: string;
   subtitle?: string;
   image?: string;
-  focalPoint?: FocalPoint;
   calloutRect?: CalloutRect;
   revealVariant?: RevealVariant;
 }
@@ -34,7 +28,6 @@ export const scenes: Scene[] = [
     durationFrames: 120,
     image: "photos/rates.jpg",
     caption: "Tired of tabbing between goggles and Betaflight mid-tune?",
-    focalPoint: { xPct: 50, yPct: 50 },
   },
   {
     id: "reveal-caption",
@@ -60,8 +53,7 @@ export const scenes: Scene[] = [
     durationFrames: 75,
     image: "photos/pids.jpg",
     caption: "8 PID tuning sliders — matched to Configurator",
-    focalPoint: { xPct: 24, yPct: 52 },
-    calloutRect: { xPct: 4, yPct: 32, wPct: 40, hPct: 40 },
+    calloutRect: { xPct: 9, yPct: 40, wPct: 30, hPct: 37 },
   },
   {
     id: "feature-pids-numbers",
@@ -70,8 +62,7 @@ export const scenes: Scene[] = [
     durationFrames: 75,
     image: "photos/pids.jpg",
     caption: "Live P / I / D / D-Min / FF preview",
-    focalPoint: { xPct: 72, yPct: 45 },
-    calloutRect: { xPct: 44, yPct: 35, wPct: 52, hPct: 22 },
+    calloutRect: { xPct: 50, yPct: 40, wPct: 44, hPct: 20 },
   },
   {
     id: "feature-rates-data",
@@ -80,8 +71,7 @@ export const scenes: Scene[] = [
     durationFrames: 75,
     image: "photos/rates.jpg",
     caption: "All 4 rate types, every axis",
-    focalPoint: { xPct: 44, yPct: 38 },
-    calloutRect: { xPct: 14, yPct: 30, wPct: 58, hPct: 32 },
+    calloutRect: { xPct: 6, yPct: 40, wPct: 69, hPct: 26 },
   },
   {
     id: "feature-filters",
@@ -90,8 +80,7 @@ export const scenes: Scene[] = [
     durationFrames: 75,
     image: "photos/filters-p.jpg",
     caption: "Gyro + D-term filters — global & per-profile",
-    focalPoint: { xPct: 56, yPct: 46 },
-    calloutRect: { xPct: 15, yPct: 28, wPct: 78, hPct: 36 },
+    calloutRect: { xPct: 9, yPct: 37, wPct: 80, hPct: 30 },
   },
   {
     id: "feature-vtx",
@@ -100,8 +89,7 @@ export const scenes: Scene[] = [
     durationFrames: 75,
     image: "photos/vtx.jpg",
     caption: "Band, channel, power",
-    focalPoint: { xPct: 43, yPct: 40 },
-    calloutRect: { xPct: 20, yPct: 22, wPct: 45, hPct: 28 },
+    calloutRect: { xPct: 11, yPct: 34, wPct: 15, hPct: 17 },
   },
   {
     id: "feature-motor",
@@ -110,8 +98,7 @@ export const scenes: Scene[] = [
     durationFrames: 75,
     image: "photos/motor.jpg",
     caption: "Throttle boost, idle, sag comp",
-    focalPoint: { xPct: 49, yPct: 40 },
-    calloutRect: { xPct: 8, yPct: 22, wPct: 82, hPct: 35 },
+    calloutRect: { xPct: 11, yPct: 34, wPct: 56, hPct: 26 },
   },
   {
     id: "payoff",
@@ -120,7 +107,6 @@ export const scenes: Scene[] = [
     durationFrames: 90,
     image: "photos/motor.jpg",
     caption: "Change it in the field.\nNo goggles. No laptop. No USB.",
-    focalPoint: { xPct: 49, yPct: 40 },
   },
   {
     id: "cta",
@@ -129,7 +115,6 @@ export const scenes: Scene[] = [
     durationFrames: 60,
     image: "photos/motor.jpg",
     caption: "Tested on Jumper T15 & RadioMaster TX15 —\ntry it, tell me what breaks.",
-    focalPoint: { xPct: 49, yPct: 40 },
   },
   {
     id: "outro",
