@@ -34,11 +34,25 @@ export const TitleCard: React.FC<{ title: string; subtitle: string }> = ({ title
       <Img
         src={staticFile("brand/splash-neontag-blue.png")}
         style={{
-          width: "70%",
+          width: "30%",
           opacity: logoProgress,
           transform: `scale(${interpolate(logoProgress, [0, 1], [0.85, 1])})`,
         }}
       />
+      <div
+        style={{
+          fontFamily: "system-ui, sans-serif",
+          fontWeight: 800,
+          fontSize: 128,
+          color: "#ffffff",
+          textShadow: "0 0 24px rgba(56, 214, 255, 0.85), 0 0 4px rgba(56, 214, 255, 0.9)",
+          opacity: logoProgress,
+          transform: `scale(${interpolate(logoProgress, [0, 1], [0.85, 1])})`,
+          textAlign: "center",
+        }}
+      >
+        {title}
+      </div>
       <div
         style={{
           fontFamily: "system-ui, sans-serif",
@@ -54,7 +68,6 @@ export const TitleCard: React.FC<{ title: string; subtitle: string }> = ({ title
       >
         {subtitle}
       </div>
-      <div style={{ position: "absolute", opacity: 0, height: 0, overflow: "hidden" }}>{title}</div>
     </AbsoluteFill>
   );
 };

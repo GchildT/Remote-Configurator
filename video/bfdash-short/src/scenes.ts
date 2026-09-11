@@ -100,8 +100,8 @@ export const scenes: Scene[] = [
     durationFrames: 75,
     image: "photos/vtx.jpg",
     caption: "Band, channel, power",
-    focalPoint: { xPct: 40, yPct: 70 },
-    calloutRect: { xPct: 10, yPct: 60, wPct: 60, hPct: 30 },
+    focalPoint: { xPct: 30, yPct: 40 },
+    calloutRect: { xPct: 8, yPct: 30, wPct: 24, hPct: 24 },
   },
   {
     id: "feature-motor",
