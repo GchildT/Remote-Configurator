@@ -8,8 +8,5 @@ vi.mock("remotion", async () => {
     useCurrentFrame: () => 0,
     Img: ({ src, style }: any) => React.createElement("img", { src, style }),
     AbsoluteFill: ({ children, style }: any) => React.createElement("div", { style }, children),
-    Easing: actual.Easing,
-    interpolate: actual.interpolate,
-    staticFile: (path: string) => path,
   };
 });
