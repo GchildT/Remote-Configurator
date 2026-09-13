@@ -39,6 +39,23 @@ for now.
 - **Rates** -- all 4 rate types (Betaflight/RaceFlight/KISS/Actual/
   QuickRates), Roll/Pitch/Yaw x Sensitivity/Max Rate/Expo grid, with the
   same per-type display scaling Configurator uses.
+- **Curves** -- a continuation of Rates: both tabs edit the SAME underlying
+  `MSP_RC_TUNING` buffer through one shared backing module
+  (`pages/ratesShared.lua`), the same architecture as the two Filters tabs,
+  so an edit on one and an edit on the other can never clobber each other on
+  save. A live Roll/Pitch/Yaw rate-curve
+  graph, plotting stick position against output deg/s exactly the way
+  Configurator's own "Rates Preview" chart does -- the curve math
+  (`getBetaflightRates`/`getRaceflightRates`/`getKISSRates`/
+  `getActualRates`/`getQuickRates`) is ported line-for-line from
+  betaflight-configurator's `src/js/RateCurve.js`, verified against hand-
+  derived values in a smoke test. Below/beside it: Throttle Limit (type +
+  %), Throttle MID, Hover Point, and Throttle EXPO, laid out the same
+  grouping as Configurator's own Throttle section. Hover Point
+  (`thrHover8`) only exists on MSP API 1.47+ (confirmed against
+  betaflight-configurator's MSPHelper.js) -- on an older FC that field
+  reads "N/A" and is skipped on save, since the byte simply isn't in that
+  FC's response at all.
 - **Filters(G) -- "Global Filters"** -- the profile-INDEPENDENT half of
   Betaflight's Filter Settings screen (`gyroConfig()` is one global struct
   shared by all 4 PID profiles). Order matches Configurator's own screen:
@@ -84,8 +101,8 @@ as two entirely separate sets of 4 slots each (`PID_PROFILE_COUNT` and
 switch the other. The profile strip below the tab bar reflects that: a
 "PID: 1 2 3 4" selector is always visible (PIDs, both Filters tabs, and
 Motor all read/write the currently-active **PID** profile), while
-"Rate: 1 2 3 4" only appears while the Rates tab itself is active, since
-that's the only tab it affects. VTX is global and isn't tied to either.
+"Rate: 1 2 3 4" only appears while the Rates or Curves tab is active, since
+those are the only tabs it affects. VTX is global and isn't tied to either.
 
 Tapping a profile number switches the flight controller's active profile
 immediately (so its settings can be previewed/edited), but that switch only

@@ -75,7 +75,9 @@ M.FILTER_MULTIPLIER_CALC_FIELDS = {
 }
 M.FILTER_MULTIPLIER_CALC_PAYLOAD_LEN = 18
 
--- Offsets verified against Betaflight 4.5.5 src/main/msp/msp.c (case MSP_RC_TUNING).
+-- Offsets verified against Betaflight 4.5.5 AND 2026.6.1 src/main/msp/msp.c
+-- (case MSP_RC_TUNING) and betaflight-configurator's own MSPHelper.js decode
+-- order, byte-for-byte identical between the two firmware versions.
 M.RC_TUNING_FIELDS = {
     rcRateRoll = { offset = 1, size = 1 },
     rcExpoRoll = { offset = 2, size = 1 },
@@ -94,6 +96,13 @@ M.RC_TUNING_FIELDS = {
     rateLimitPitch = { offset = 19, size = 2 },
     rateLimitYaw = { offset = 21, size = 2 },
     ratesType = { offset = 23, size = 1 },
+    -- "Hover Point" (thrHover8 in controlrate_profile.h) -- added in MSP API
+    -- 1.47 (confirmed against betaflight-configurator's MSPHelper.js: only
+    -- read/written when `semver.gte(FC.CONFIG.apiVersion, API_VERSION_1_47)`).
+    -- This project's floor is API 1.44, so an FC below 1.47 sends a payload
+    -- that simply ENDS before this offset -- callers must check the actual
+    -- payload length before reading/writing it, never assume it's present.
+    hoverPoint = { offset = 24, size = 1 },
 }
 
 -- Offsets verified against Betaflight 4.5.5 AND 2026.6.1 src/main/msp/msp.c

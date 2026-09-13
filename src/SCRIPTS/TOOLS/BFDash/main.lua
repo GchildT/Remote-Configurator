@@ -20,11 +20,11 @@ local COLOR_ORANGE = lcd.RGB(230, 140, 20)
 -- instead of the radio silently doing nothing. Remove this wrapper once the
 -- script is confirmed loading cleanly on real hardware.
 local msp, mspMsgs, stateMod, safety
-local pidsPage, ratesPage, globalFiltersPage, profileFiltersPage, vtxPage, throttlePage
+local pidsPage, ratesPage, ratesCurvesPage, globalFiltersPage, profileFiltersPage, vtxPage, throttlePage
 local CRSF_FRAMETYPE_MSP_RESP
 local REQUEST_TIMEOUT_MS
 local MIN_API_MAJOR, MIN_API_MINOR
-local pages, pageNames, pageKeys, pageByKey, SET_CMD_BY_KEY, PROFILE_TYPE_PAGE_KEYS, RATES_TAB_INDEX
+local pages, pageNames, pageKeys, pageByKey, SET_CMD_BY_KEY, PROFILE_TYPE_PAGE_KEYS, RATES_TAB_INDEX, RATE_CURVES_TAB_INDEX
 local app
 
 local setupOk, setupErr = pcall(function()
@@ -38,21 +38,26 @@ local setupOk, setupErr = pcall(function()
 
     pidsPage = include("pages/pids.lua")
     ratesPage = include("pages/rates.lua")
+    ratesCurvesPage = include("pages/ratesCurves.lua")
     globalFiltersPage = include("pages/globalFilters.lua")
     profileFiltersPage = include("pages/profileFilters.lua")
     vtxPage = include("pages/vtx.lua")
     throttlePage = include("pages/throttle.lua")
 
-    -- filtersShared.lua carries mutable state (load phase, in-flight
-    -- multiplier-calc tracking) that MUST be the exact same instance for
-    -- both filter tabs -- loadScript()/dofile() have no require()-style
-    -- caching, so each tab loading it independently in its own file would
-    -- silently create two separate, un-synchronized copies. Load it here
+    -- filtersShared.lua and ratesShared.lua both carry mutable state (load
+    -- phase) that MUST be the exact same instance for the two tabs that
+    -- share it -- loadScript()/dofile() have no require()-style caching, so
+    -- each tab loading its shared module independently in its own file
+    -- would silently create two separate, un-synchronized copies. Load each
     -- exactly once (same pattern as mspMsgs/stateMod/safety/msp above) and
-    -- inject that one instance into both tabs.
+    -- inject that one instance into both of that pair's tabs.
     local filtersShared = include("pages/filtersShared.lua")
     globalFiltersPage.init(filtersShared)
     profileFiltersPage.init(filtersShared)
+
+    local ratesShared = include("pages/ratesShared.lua")
+    ratesPage.init(ratesShared)
+    ratesCurvesPage.init(ratesShared)
 
     CRSF_FRAMETYPE_MSP_RESP = 0x7B
     -- Generous enough to cover a full multi-chunk SET request (the largest,
@@ -71,19 +76,25 @@ local setupOk, setupErr = pcall(function()
     -- through API 1.48 (Betaflight 2026.6.1).
     MIN_API_MAJOR, MIN_API_MINOR = 1, 44
 
-    -- Global Filters and Profile Filters are two TABS but share ONE state
-    -- key ("filters") and one underlying MSP_FILTER_CONFIG buffer -- see
-    -- pages/filtersShared.lua's header comment for why: that buffer covers
-    -- both tabs' fields together, and giving each tab its own independent
+    -- Rates/Curves and Global/Profile Filters are two PAIRS of tabs that
+    -- each share ONE state key and one underlying MSP buffer -- see
+    -- pages/ratesShared.lua and pages/filtersShared.lua's header comments
+    -- for why: MSP_RC_TUNING (resp. MSP_FILTER_CONFIG) covers both tabs'
+    -- fields together in each pair, and giving each tab its own independent
     -- copy would let one tab's save silently clobber the other's pending
     -- edits. pageKeys/pageByKey are intentionally NOT parallel to pages/
-    -- pageNames here (5 state keys backing 6 tabs) -- nothing else in this
+    -- pageNames here (5 state keys backing 7 tabs) -- nothing else in this
     -- file assumes they're the same length.
-    pages = { pidsPage, ratesPage, globalFiltersPage, profileFiltersPage, vtxPage, throttlePage }
-    pageNames = { "PIDs", "Rates", "Filters(G)", "Filters(P)", "VTX", "Motor" }
+    pages = { pidsPage, ratesPage, ratesCurvesPage, globalFiltersPage, profileFiltersPage, vtxPage, throttlePage }
+    pageNames = { "PIDs", "Rates", "Curves", "Filters(G)", "Filters(P)", "VTX", "Motor" }
     pageKeys = { "pids", "rates", "filters", "vtx", "throttle" }
     pageByKey = { pids = pidsPage, rates = ratesPage, filters = globalFiltersPage, vtx = vtxPage, throttle = throttlePage }
-    RATES_TAB_INDEX = 2 -- position of ratesPage in `pages` above; the rate-profile selector only shows on this tab (see drawProfileRow/handleProfileTouch)
+    -- Positions of ratesPage/ratesCurvesPage in `pages` above; the
+    -- rate-profile selector only shows on these two tabs (see
+    -- drawProfileRow/handleProfileTouch) since every other tab depends on
+    -- PID profile instead (or nothing at all, for VTX).
+    RATES_TAB_INDEX = 2
+    RATE_CURVES_TAB_INDEX = 3
 
     -- Betaflight tracks PID profile and rate profile as two SEPARATE active
     -- indices (MSP_SELECT_SETTING's RATEPROFILE_MASK bit picks which one a
@@ -535,7 +546,10 @@ local function reloadPageKey(key)
     if key == "pids" then
         pidsPage.create()
     elseif key == "rates" then
+        -- Both rate tabs share ratesShared.lua's load state -- calling both
+        -- create()s is harmless/idempotent, see that file's header.
         ratesPage.create()
+        ratesCurvesPage.create()
     elseif key == "filters" then
         -- Both filter tabs share filtersShared.lua's load state -- calling
         -- both create()s is harmless/idempotent, see that file's header.
@@ -582,17 +596,21 @@ local function drawProfileSelector(labelX, boxX0, label, activeSlot, armed)
     end
 end
 
--- Rate profile only affects the Rates tab (PIDs/Filters/Motor all depend on
--- PID profile instead -- see PROFILE_TYPE_PAGE_KEYS), so its selector is
--- only shown/tappable while that tab is active, decluttering every other
--- tab. PID's selector stays visible everywhere since it's relevant on 4 of
--- the 6 tabs.
+-- Rate profile only affects the Rates/Curves tabs (PIDs/Filters/Motor all
+-- depend on PID profile instead -- see PROFILE_TYPE_PAGE_KEYS), so its
+-- selector is only shown/tappable while one of those two tabs is active,
+-- decluttering every other tab. PID's selector stays visible everywhere
+-- since it's relevant on 4 of the 7 tabs.
+local function onRatesTab()
+    return app.activeTab == RATES_TAB_INDEX or app.activeTab == RATE_CURVES_TAB_INDEX
+end
+
 local function drawProfileRow(armed)
     if armed then
         return
     end
     drawProfileSelector(PID_LABEL_X, PID_BOX_X0, "PID:", app.pidProfileSlot, armed)
-    if app.activeTab == RATES_TAB_INDEX then
+    if onRatesTab() then
         drawProfileSelector(RATE_LABEL_X, RATE_BOX_X0, "Rate:", app.rateProfileSlot, armed)
     end
 end
@@ -636,7 +654,7 @@ local function handleProfileTouch(touchState, armed)
             app.session:request(mspMsgs.CMD.SELECT_SETTING, mspMsgs.encodeSelectSetting("pid", slot - 1))
             profileFlow = "selecting"
         end
-    elseif app.activeTab == RATES_TAB_INDEX then
+    elseif onRatesTab() then
         -- Rate's selector isn't even drawn on other tabs -- ignore a tap
         -- landing in that screen region elsewhere rather than acting on a
         -- control the user can't see.

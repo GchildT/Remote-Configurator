@@ -1,6 +1,3 @@
-local mspMsgs = loadScript and assert(loadScript("/SCRIPTS/TOOLS/BFDash/mspMsgs.lua"))() or dofile("src/SCRIPTS/TOOLS/BFDash/mspMsgs.lua")
-local mspBuffer = loadScript and assert(loadScript("/SCRIPTS/TOOLS/BFDash/transport/mspBuffer.lua"))() or dofile("src/SCRIPTS/TOOLS/BFDash/transport/mspBuffer.lua")
-
 -- Explicit RGB colors rather than named constants -- see main.lua's note.
 local COLOR_WHITE = lcd.RGB(255, 255, 255)
 local COLOR_YELLOW = lcd.RGB(255, 210, 0)
@@ -11,6 +8,20 @@ local EVT_ROTARY_LEFT = 0x1003
 local EVT_ROTARY_RIGHT = 0x1004
 
 local M = {}
+
+-- ratesShared is NOT loaded here with the usual loadScript/dofile-in-file
+-- pattern: EdgeTX's loadScript() (like Lua's own loadfile/dofile) compiles
+-- and returns a fresh chunk on every call, with no require()-style caching.
+-- ratesShared.lua carries genuinely mutable state (load phase) that both
+-- this tab and pages/ratesCurves.lua must share, so loading it independently
+-- here (a second, unrelated instance) would silently break that sharing.
+-- main.lua loads it exactly once and injects that single instance via
+-- M.init() instead -- see main.lua's setup and ratesShared.lua's header.
+local shared = nil
+
+function M.init(sharedRatesModule)
+    shared = sharedRatesModule
+end
 
 -- Confirmed against Betaflight Configurator source
 -- (src/components/tabs/pid-tuning/RatesSubTab.vue: const RatesType = {...}).
@@ -94,72 +105,33 @@ local COLUMN_W = 110
 local ROW_Y = { 138, 170, 202 }
 local ROW_H = 26
 
-local phase = "idle"
 local focusedCell = nil -- index into CELLS of the currently jog-dial-editable field, or nil
 
-local function decodeIntoState(state, rawBuffer)
-    local values = { rawBuffer = rawBuffer }
-    for _, cell in ipairs(CELLS) do
-        values[cell.key] = mspBuffer.readField(rawBuffer, mspMsgs.RC_TUNING_FIELDS[cell.key])
-    end
-    values.ratesType = mspBuffer.readField(rawBuffer, mspMsgs.RC_TUNING_FIELDS.ratesType)
-    state:load("rates", values)
-end
-
 function M.create()
-    phase = "idle"
+    shared.create()
     focusedCell = nil
 end
 
 function M.update(state, armed)
-    if phase == "idle" and state:get("rates") == nil then
-        phase = "loading"
-    end
+    shared.update(state, armed)
 end
 
-local function beginSave(session, state)
-    local values = state:get("rates")
-    local buf = values.rawBuffer
-    for _, cell in ipairs(CELLS) do
-        buf = mspBuffer.writeField(buf, mspMsgs.RC_TUNING_FIELDS[cell.key], values[cell.key])
-    end
-    buf = mspBuffer.writeField(buf, mspMsgs.RC_TUNING_FIELDS.ratesType, values.ratesType)
-    session:request(mspMsgs.CMD.SET_RC_TUNING, buf)
+function M.beginSave(session, state)
+    shared.beginSave(session, state)
 end
-M.beginSave = beginSave
 
 function M.event(event, touchState, state, session, nowMs, armed)
-    if phase == "loading" then
-        local status = session:poll(nowMs)
-        if status == "done" then
-            local cmd, payload = session:result()
-            -- Shared session: only decode a reply to OUR request (see pids.lua).
-            if cmd == mspMsgs.CMD.RC_TUNING then
-                decodeIntoState(state, payload)
-                phase = "ready"
-            else
-                phase = "idle"
-            end
-        elseif status == "idle" then
-            session:request(mspMsgs.CMD.RC_TUNING, "")
-        elseif status == "timeout" or status == "error" then
-            session:reset()
-            phase = "idle"
-        end
-    end
-
-    if phase ~= "ready" then
-        lcd.drawText(10, CONTENT_TOP, "Loading rates...", COLOR_WHITE)
+    local values = shared.ensureLoaded(session, nowMs, state, CONTENT_TOP, "Loading rates...")
+    if values == nil then
         return
     end
 
-    local values = state:get("rates")
     lcd.drawText(10, TYPE_Y, "Rate type: " .. (RATE_TYPE_NAMES[values.ratesType] or "?"), COLOR_WHITE)
 
     if not armed and touchState then
         local tx, ty = touchState.x, touchState.y
         if ty >= TYPE_Y and ty < TYPE_Y + TYPE_H and tx >= TYPE_X and tx < TYPE_X + TYPE_W then
-            state:setField("rates", "ratesType", (values.ratesType + 1) % RATE_TYPE_COUNT)
+            state:setField(shared.PAGE_KEY, "ratesType", (values.ratesType + 1) % RATE_TYPE_COUNT)
         end
     end
 
@@ -171,7 +143,7 @@ function M.event(event, touchState, state, session, nowMs, armed)
         local cell = CELLS[focusedCell]
         local newValue = values[cell.key] + delta
         newValue = math.max(0, math.min(255, newValue))
-        state:setField("rates", cell.key, newValue)
+        state:setField(shared.PAGE_KEY, cell.key, newValue)
     end
 
     for c, col in ipairs(COLUMNS) do

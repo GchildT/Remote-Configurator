@@ -80,6 +80,15 @@ testkit.describe("mspMsgs.RC_TUNING_FIELDS", function()
         local buf = string.rep("\0", 16) .. string.char(0xE8, 0x03) .. string.rep("\0", 4) -- rateLimitRoll=1000 at offset 17-18
         testkit.assertEquals(mspBuffer.readField(buf, mspMsgs.RC_TUNING_FIELDS.rateLimitRoll), 1000, "rateLimitRoll")
     end)
+
+    -- "Hover Point" (thrHover8) -- added in MSP API 1.47, the byte right
+    -- after ratesType. Confirmed against betaflight-configurator's
+    -- MSPHelper.js: only present when apiVersion >= 1.47, so an older FC's
+    -- response simply ends at ratesType (23 bytes) with no byte 24 at all.
+    testkit.it("reads hoverPoint at offset 24, one byte past ratesType", function()
+        local buf = string.rep("\0", 23) .. string.char(65) -- hoverPoint raw=65 (0.65)
+        testkit.assertEquals(mspBuffer.readField(buf, mspMsgs.RC_TUNING_FIELDS.hoverPoint), 65, "hoverPoint")
+    end)
 end)
 
 testkit.describe("mspMsgs.FILTER_CONFIG_FIELDS", function()
