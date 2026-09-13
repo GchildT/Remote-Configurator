@@ -2,6 +2,7 @@ import React from "react";
 import { Composition } from "remotion";
 import { BFDashShort } from "./BFDashShort";
 import { Thumbnail } from "./Thumbnail";
+import { ThumbnailLandscape } from "./ThumbnailLandscape";
 
 export const RemotionRoot: React.FC = () => {
   return (
@@ -21,6 +22,14 @@ export const RemotionRoot: React.FC = () => {
         fps={30}
         width={2160}
         height={3840}
+      />
+      <Composition
+        id="ThumbnailLandscape"
+        component={ThumbnailLandscape}
+        durationInFrames={1}
+        fps={30}
+        width={1920}
+        height={1080}
       />
     </>
   );
