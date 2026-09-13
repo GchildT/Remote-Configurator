@@ -18,7 +18,7 @@ export const OutroCard: React.FC<{ caption: string }> = ({ caption }) => {
         <Img
           src={staticFile("brand/pfp-neontag-blue.png")}
           style={{
-            width: "45%",
+            height: "75%",
             transform: `scale(${logoScale})`,
           }}
         />
