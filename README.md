@@ -56,13 +56,13 @@ for now.
   betaflight-configurator's MSPHelper.js) -- on an older FC that field
   reads "N/A" and is skipped on save, since the byte simply isn't in that
   FC's response at all.
-- **Filters(G) -- "Global Filters"** -- the profile-INDEPENDENT half of
+- **Filt-G -- "Global Filters"** -- the profile-INDEPENDENT half of
   Betaflight's Filter Settings screen (`gyroConfig()` is one global struct
   shared by all 4 PID profiles). Order matches Configurator's own screen:
   Gyro Filter Multiplier (a graphical slider, styled like the PIDs page's
   sliders), Gyro Lowpass 1 & 2 (with filter type), Gyro Notch Filters 1 & 2,
   Gyro RPM Filter, and Dynamic Notch Filter.
-- **Filters(P) -- "Profile Filters"** -- the profile-DEPENDENT half (these
+- **Filt-P -- "Profile Filters"** -- the profile-DEPENDENT half (these
   fields live in the currently-active PID profile slot). Order: D Term
   Filter Multiplier (graphical slider), D Term Lowpass 1 (with a
   STATIC/DYNAMIC mode row -- there's no separate "mode" byte in the
