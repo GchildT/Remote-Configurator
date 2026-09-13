@@ -63,7 +63,20 @@ export const SplitBeat: React.FC<{
         {dim && <AbsoluteFill style={{ backgroundColor: "rgba(2, 6, 15, 0.55)" }} />}
       </div>
 
-      <div style={{ position: "absolute", left: "50%", top: 0, width: "50%", height: "100%" }}>
+      <div
+        style={{
+          position: "absolute",
+          left: "50%",
+          top: 0,
+          width: "50%",
+          height: "100%",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 48,
+        }}
+      >
         {icon}
         {caption}
       </div>

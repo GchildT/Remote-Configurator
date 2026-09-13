@@ -23,7 +23,9 @@ export const OutroCard: React.FC<{ caption: string }> = ({ caption }) => {
           }}
         />
       </AbsoluteFill>
-      <Caption text={caption} startFrame={0} position="bottom" />
+      <AbsoluteFill style={{ top: "50%", height: "50%", alignItems: "center", justifyContent: "center" }}>
+        <Caption text={caption} startFrame={0} position="center" />
+      </AbsoluteFill>
     </AbsoluteFill>
   );
 };
