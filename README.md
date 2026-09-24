@@ -88,7 +88,8 @@ for now.
   other can never clobber each other on save, and switching tabs never
   triggers a redundant reload.
 - **VTX** -- Band, Channel, Power.
-- **Motor** -- Throttle Boost, Motor Output Limit, Dynamic Idle Value, Vbat
+- **Motor** -- Throttle Boost, Motor Output Limit, Dynamic Idle Value, Dynamic
+  Damping Gain, Dynamic Damping Advance (D Max), Vbat
   Sag Compensation %, Thrust Linearization % -- all plain fields, 0 = off for
   the last two.
 

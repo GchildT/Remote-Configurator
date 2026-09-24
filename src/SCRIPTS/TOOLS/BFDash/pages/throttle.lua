@@ -25,16 +25,17 @@ local ROWS = {
     { key = "throttleBoost", label = "Throttle Boost", min = 0, max = 100, step = 1 },
     { key = "motorOutputLimit", label = "Motor Output Limit", min = 25, max = 100, step = 1 },
     { key = "dynIdleMinRpm", label = "Dynamic Idle Value [x100 RPM]", min = 0, max = 200, step = 1 },
+    { key = "dMaxGain", label = "Dynamic Damping Gain", min = 0, max = 100, step = 1 },
+    { key = "dMaxAdvance", label = "Dynamic Damping Advance", min = 0, max = 200, step = 1 },
     { key = "vbatSagCompensation", label = "Vbat Sag Compensation %", min = 0, max = 100, step = 1 },
     { key = "thrustLinearization", label = "Thrust Linearization %", min = 0, max = 100, step = 1 },
 }
 
 -- Layout: content starts at y=86, leaving a blank gap below the tab bar +
 -- profile row (which end at y=64) for visual breathing room, and must
--- finish above the footer at y=232. 5 rows * 26px = 130px span y=86..216,
--- comfortably clear of both boundaries.
+-- finish above the footer at y=232. 7 rows * 20px = 140px span y=86..226.
 local ROW_TOP = 86
-local ROW_H = 26
+local ROW_H = 20
 local LABEL_X = 4
 local VALUE_X = 320
 

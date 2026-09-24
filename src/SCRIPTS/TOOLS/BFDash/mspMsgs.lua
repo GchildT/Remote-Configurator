@@ -144,6 +144,11 @@ M.FILTER_CONFIG_FIELDS = {
 M.PID_ADVANCED_FIELDS = {
     throttleBoost = { offset = 31, size = 1 },
     motorOutputLimit = { offset = 48, size = 1 },
+    -- D Max ("Dynamic Damping") gain/advance: 4.5.5 names these d_min_gain/
+    -- d_min_advance at the same offsets (renamed later). Ranges 0-100 /
+    -- 0-200 confirmed against 2026.6.1 src/main/cli/settings.c.
+    dMaxGain = { offset = 43, size = 1 },
+    dMaxAdvance = { offset = 44, size = 1 },
     dynIdleMinRpm = { offset = 50, size = 1 },
     vbatSagCompensation = { offset = 56, size = 1 },
     thrustLinearization = { offset = 57, size = 1 },
