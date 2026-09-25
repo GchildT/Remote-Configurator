@@ -1,5 +1,25 @@
 # Betaflight Settings Dashboard for EdgeTX
 
+## Screenshots
+
+Captured on a Jumper T15 (480x272 color touchscreen).
+
+| Launch from the Tools menu | PIDs |
+|---|---|
+| ![BFDash in the EdgeTX Tools menu](docs/screenshots/shot-01.png) | ![PIDs tab with simplified-tuning sliders and live P/I/D/Dm/FF preview](docs/screenshots/shot-02.png) |
+
+| Rates | Curves |
+|---|---|
+| ![Rates tab](docs/screenshots/shot-03.png) | ![Curves tab with live rate-curve graph and throttle settings](docs/screenshots/shot-04.png) |
+
+| Filt-G (global filters) | Filt-P (profile filters) |
+|---|---|
+| ![Filt-G tab](docs/screenshots/shot-05.png) | ![Filt-P tab](docs/screenshots/shot-06.png) |
+
+| VTX | Motor |
+|---|---|
+| ![VTX tab](docs/screenshots/shot-07.png) | ![Motor tab](docs/screenshots/shot-08.png) |
+
 An EdgeTX Tools LUA script for reading and writing Betaflight settings (PID
 simplified-tuning sliders, rate profiles, gyro/D-term filters, VTX config,
 throttle/motor settings) over MSP-over-CRSF telemetry, without needing a USB
