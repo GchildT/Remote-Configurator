@@ -538,6 +538,14 @@ local function drawFooter(armed, nowMs)
         lcd.drawText(220, FOOTER_Y + 12, "Profile switched -- Save to keep", COLOR_ORANGE)
     elseif saveConfirmedUntilMs ~= nil and nowMs < saveConfirmedUntilMs then
         lcd.drawText(220, FOOTER_Y + 12, "Saved!", COLOR_GREEN)
+    else
+        -- Nothing else to report in this space -- use it to teach the one
+        -- thing that's otherwise undiscoverable: editing is tap-row-then-
+        -- turn-the-dial, not direct touch entry. Every page uses the same
+        -- mechanism, so one hint here covers all of them instead of
+        -- repeating it per page. Low-priority grey so it never competes with
+        -- an actual status message above.
+        lcd.drawText(220, FOOTER_Y + 12, "Tap a row, turn the dial to edit", COLOR_GREY)
     end
 end
 
