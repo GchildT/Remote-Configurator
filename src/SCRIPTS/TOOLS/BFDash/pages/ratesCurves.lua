@@ -270,7 +270,13 @@ function M.event(event, touchState, state, session, nowMs, armed)
 
     for _, key in ipairs({ "throttleLimitPercent", "thrMid8", "hoverPoint", "thrExpo8" }) do
         if key == "hoverPoint" and not hasHover then
-            lcd.drawText(COL_R_X, y, "Hover Point: N/A (needs newer FW)", COLOR_GREY)
+            -- Names the actual version rather than a vague "newer FW" -- this
+            -- field is the one thing on this row that's conditional on
+            -- firmware at all (Throttle Limit/MID/EXPO above work on any
+            -- supported version), so it's worth being specific about why.
+            -- 1.47 confirmed against betaflight-configurator's MSPHelper.js
+            -- -- see ratesShared.lua's own hoverPoint comment.
+            lcd.drawText(COL_R_X, y, "Hover Point: N/A (needs API 1.47+)", COLOR_GREY)
         else
             local isFocused = drawField(COL_R_X, COL_R_W, y, key, values)
             if not armed and touchState and touchState.x >= COL_R_X and touchState.x < COL_R_X + COL_R_W and touchState.y >= y and touchState.y < y + ROW_H then
