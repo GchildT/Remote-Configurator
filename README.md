@@ -125,27 +125,39 @@ Motor all read/write the currently-active **PID** profile), while
 "Rate: 1 2 3 4" only appears while the Rates or Curves tab is active, since
 those are the only tabs it affects. VTX is global and isn't tied to either.
 
-Tapping a profile number switches the flight controller's active profile
-immediately (so its settings can be previewed/edited), but that switch only
-lives in the FC's RAM until you press **Save** -- an `EEPROM_WRITE` is what
-makes it survive a power cycle, the same as it works in Betaflight
-Configurator. Until you save, the just-switched profile's box shows orange
-instead of blue and the footer reads "Profile switched -- Save to keep" (if
-you never save, the FC just reverts to whichever profile was last actually
-persisted, next time it powers up).
+Tapping a profile number opens a confirmation overlay before anything happens
+("Switch to PID profile 2 now? This takes effect on the flight controller
+immediately, not just in this tool.") -- only tapping **Switch** there actually
+sends the switch. That's deliberate: a profile switch takes effect on the FC
+right away (it's not a local preview), so a pilot browsing tabs/slots on the
+bench shouldn't be able to switch the live profile as the side effect of one
+tap. Once confirmed, the switch lives in the FC's RAM until you press
+**Save** -- an `EEPROM_WRITE` is what makes it survive a power cycle, the same
+as it works in Betaflight Configurator. Until you save, the just-switched
+profile's box shows orange instead of blue and the footer reads "Profile
+switched -- Save to keep" (if you never save, the FC just reverts to
+whichever profile was last actually persisted, next time it powers up).
 
 ## Editing
 
 - Tap a row (label or value -- the whole row is one tap target) to focus it,
-  then turn the radio's jog dial to adjust; tap again to confirm/unfocus.
-- Nothing is written to the flight controller until you press **Save**;
-  editing only stages the change locally. **Save** writes every dirty page's
-  changes, persists the active PID/rate profile selection (see above), and
-  commits all of it to EEPROM in one flow; a green "Saved!" confirmation
-  shows in the footer for a couple seconds once that's confirmed. **Cancel**
-  discards unsaved field edits (it does not revert an already-switched
-  profile back).
-- Editing is blocked outright while the flight controller reports ARMED.
+  then turn the radio's jog dial to adjust; tap again to confirm/unfocus. A
+  reminder of this ("Tap a row, turn the dial to edit") shows in the footer
+  itself whenever there's nothing more important to report there.
+- Nothing is written to the flight controller until you press **Save** --
+  editing only stages the change locally. Tapping **Save** opens a
+  confirmation overlay first (its wording adapts to whether there are field
+  edits, a pending profile switch, or both pending); only tapping **Save**
+  again there actually writes every dirty page's changes, persists the active
+  PID/rate profile selection (see above), and commits all of it to EEPROM in
+  one flow. A green "Saved!" confirmation then shows in the footer for a
+  couple seconds. **Cancel**, on either the footer or the confirmation
+  overlay, backs out without writing anything (the footer's Cancel discards
+  unsaved field edits; it does not revert an already-switched profile back).
+- Editing is blocked outright while the flight controller reports ARMED, and
+  arming while either confirmation overlay is open drops it back to idle
+  automatically (neither overlay has sent anything to the FC yet at that
+  point).
 
 ## Safety / connection behavior
 
@@ -174,9 +186,16 @@ live preview, Rates, both Filters tabs including the Filter Multiplier
 sliders, VTX, Motor), disconnect/reconnect between different flight
 controllers, and switching PID/rate profiles with Save persisting the
 switch across a power cycle -- all confirmed working as expected by a
-project maintainer as of this writing. The tool is now being shared with a
-wider group of pilots for further feedback -- if you hit something odd,
-please open an issue with what radio/firmware you're on and what you saw.
+project maintainer as of this writing.
+
+A subsequent round of UX changes -- confirmation overlays before a profile
+switch or a Save actually reaches the FC, friendlier save/connection error
+text, an editing hint in the footer, and a clearer Hover Point
+not-available message -- is currently undergoing its own bench-test pass.
+
+The tool is now being shared with a wider group of pilots for further
+feedback -- if you hit something odd, please open an issue with what
+radio/firmware you're on and what you saw.
 
 ## Known limitations
 
