@@ -24,7 +24,7 @@ local pidsPage, ratesPage, ratesCurvesPage, globalFiltersPage, profileFiltersPag
 local CRSF_FRAMETYPE_MSP_RESP
 local REQUEST_TIMEOUT_MS
 local MIN_API_MAJOR, MIN_API_MINOR
-local pages, pageNames, pageKeys, pageByKey, SET_CMD_BY_KEY, PROFILE_TYPE_PAGE_KEYS, RATES_TAB_INDEX, RATE_CURVES_TAB_INDEX
+local pages, pageNames, pageKeys, pageByKey, SET_CMD_BY_KEY, PAGE_LABEL_BY_KEY, PROFILE_TYPE_PAGE_KEYS, RATES_TAB_INDEX, RATE_CURVES_TAB_INDEX
 local app
 
 local setupOk, setupErr = pcall(function()
@@ -118,6 +118,18 @@ local setupOk, setupErr = pcall(function()
         filters = mspMsgs.CMD.SET_FILTER_CONFIG,
         vtx = mspMsgs.CMD.SET_VTX_CONFIG,
         throttle = mspMsgs.CMD.SET_PID_ADVANCED,
+    }
+
+    -- Human-facing name for each state key, used only in on-screen save-error
+    -- text -- "filters"/"throttle" etc. are internal state keys (see
+    -- pageKeys above), never shown to a pilot directly. "Filters" covers
+    -- both Filt-G/Filt-P (they share this one key -- see filtersShared.lua).
+    PAGE_LABEL_BY_KEY = {
+        pids = "PIDs",
+        rates = "Rates",
+        filters = "Filters",
+        vtx = "VTX",
+        throttle = "Motor",
     }
 
     app = {
@@ -430,7 +442,7 @@ local function pumpSaveFlow(nowMs)
         -- and abort the queue the same way a timeout/error would, without
         -- marking any key clean.
         app.session:reset()
-        failSave("Save aborted: armed.")
+        failSave("Save stopped: you armed mid-save.")
         return true
     end
 
@@ -457,12 +469,12 @@ local function pumpSaveFlow(nowMs)
                 saveFlow = "sending"
             else
                 -- Unexpected reply: we cannot claim this write landed.
-                failSave("Save failed: unexpected reply writing " .. key .. ".")
+                failSave("Save failed: bad reply (" .. PAGE_LABEL_BY_KEY[key] .. ")")
             end
         elseif status == "timeout" or status == "error" then
             -- Stop the queue: do not skip ahead, and mark nothing clean.
             app.session:reset()
-            failSave("Save failed: no reply writing " .. key .. ".")
+            failSave("Save failed: no response (" .. PAGE_LABEL_BY_KEY[key] .. ")")
         end
         return true
 
@@ -489,11 +501,15 @@ local function pumpSaveFlow(nowMs)
                 saveWritten = nil
                 saveIndex = 0
             else
-                failSave("Save failed: unexpected reply to EEPROM write.")
+                failSave("Save failed: bad reply finishing save")
             end
         elseif status == "timeout" or status == "error" then
             app.session:reset()
-            failSave("Save failed: settings not written to EEPROM.")
+            -- This is the one failure where fields may have already landed in
+            -- the FC's RAM (every SET in saveWritten was acknowledged) but
+            -- didn't get persisted -- worth telling the pilot not to power
+            -- cycle, or those changes revert to whatever was last saved.
+            failSave("Save failed: not saved -- avoid power off")
         end
         return true
     end
@@ -830,17 +846,21 @@ local function handleTabTouch(touchState, armed)
     end
 end
 
+-- Returns (mainLine, detailLine): mainLine is always plain-English and
+-- actionable; detailLine, when present, carries the technical specifics (API
+-- version numbers etc.) a pilot doesn't need to understand to know what to
+-- do, but which is worth having on screen for a bug report/screenshot.
 local function connectionMessage()
     if app.connection == "connecting" then
         return "Connecting to flight controller..."
     elseif app.connection == "unsupported" then
-        return "Connected, but flight controller is not Betaflight."
+        return "This flight controller isn't running Betaflight."
     elseif app.connection == "unsupported_version" then
-        return "Unsupported MSP API " .. tostring(apiVersionText)
-            .. " -- this tool requires API "
-            .. MIN_API_MAJOR .. "." .. MIN_API_MINOR .. "+"
+        return "Betaflight firmware is too old for this tool -- update it.",
+            "(MSP API " .. tostring(apiVersionText) .. ", need "
+                .. MIN_API_MAJOR .. "." .. MIN_API_MINOR .. "+)"
     end
-    return "No response from flight controller. Check link."
+    return "No response from flight controller.", "Check the ExpressLRS/CRSF link."
 end
 
 -- DIAGNOSTIC WRAPPER (see the setup-time one above): the real per-frame logic
@@ -883,7 +903,11 @@ local function runBody(event, touchState)
 
     if app.connection ~= "connected" then
         lcd.drawText(10, 10, "Betaflight Dashboard", COLOR_WHITE)
-        lcd.drawText(10, 40, connectionMessage(), COLOR_WHITE)
+        local mainLine, detailLine = connectionMessage()
+        lcd.drawText(10, 40, mainLine, COLOR_WHITE)
+        if detailLine then
+            lcd.drawText(10, 60, detailLine, COLOR_GREY)
+        end
         return
     end
 
