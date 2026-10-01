@@ -168,6 +168,27 @@ local FOOTER_Y = LCD_H - FOOTER_H
 local BTN_SAVE_X, BTN_SAVE_W = 0, 100
 local BTN_CANCEL_X, BTN_CANCEL_W = 110, 100
 
+-- Profile-switch confirmation overlay: a profile tap doesn't switch anything
+-- by itself any more (see handleProfileTouch/handleProfileConfirmTouch
+-- below) -- it only opens this, and the actual MSP_SELECT_SETTING only goes
+-- out once the pilot taps "Switch" here. Sits in the content band, below the
+-- profile row and above the footer, so it never overlaps either.
+--
+-- A small CONFIRM_Y gap below the profile row (rather than butting right up
+-- against it) and generous spacing between the two text lines and the button
+-- row below -- an earlier version packed these close enough that the
+-- "Switch"/"Cancel" buttons visibly overlapped the second text line on real
+-- hardware (EdgeTX's default font renders taller than that spacing assumed).
+local CONFIRM_Y = PROFILE_Y + PROFILE_ROW_H + 6
+local CONFIRM_TITLE_Y = CONFIRM_Y + 14
+local CONFIRM_LINE1_Y = CONFIRM_Y + 38
+local CONFIRM_LINE2_Y = CONFIRM_Y + 58
+local CONFIRM_BTN_Y = CONFIRM_Y + 84
+local CONFIRM_BTN_H = 32
+local CONFIRM_H = (CONFIRM_BTN_Y + CONFIRM_BTN_H + 14) - CONFIRM_Y
+local CONFIRM_YES_X, CONFIRM_YES_W = 40, 160
+local CONFIRM_NO_X, CONFIRM_NO_W = 280, 160
+
 -- Single shared CRSF pop loop: dispatches MSP_RESP frames to the active
 -- session via session:feed(). msp.lua deliberately never calls
 -- crossfireTelemetryPop() itself (see Task 3's note) so this is the only
@@ -523,7 +544,7 @@ local function handleFooterTouch(touchState, armed)
             beginSaveFlow()
         end
     elseif tx >= BTN_CANCEL_X and tx < BTN_CANCEL_X + BTN_CANCEL_W then
-        if saveFlow == "idle" then
+        if saveFlow == "idle" and profileFlow == "idle" then
             for _, key in ipairs(pageKeys) do
                 app.state:reload(key)
             end
@@ -646,13 +667,17 @@ local function handleProfileTouch(touchState, armed)
     if app.session:isPending() then
         return -- avoid reentrant session:request() while a page's own load is in flight
     end
+    -- Tapping a slot never switches anything by itself any more -- it only
+    -- opens the confirmation overlay below. Switching a profile takes effect
+    -- on the FC immediately (it's not a local preview), so a pilot flicking
+    -- through tabs/slots just to look around should never trigger that as a
+    -- side effect of one tap (see the UX review this came out of).
     local tx = touchState.x
     if tx < RATE_LABEL_X then
         local slot = hitSlot(tx, PID_BOX_X0)
         if slot and slot ~= app.pidProfileSlot then
             pendingProfileType, pendingSlot = "pid", slot
-            app.session:request(mspMsgs.CMD.SELECT_SETTING, mspMsgs.encodeSelectSetting("pid", slot - 1))
-            profileFlow = "selecting"
+            profileFlow = "confirming"
         end
     elseif onRatesTab() then
         -- Rate's selector isn't even drawn on other tabs -- ignore a tap
@@ -661,10 +686,51 @@ local function handleProfileTouch(touchState, armed)
         local slot = hitSlot(tx, RATE_BOX_X0)
         if slot and slot ~= app.rateProfileSlot then
             pendingProfileType, pendingSlot = "rate", slot
-            app.session:request(mspMsgs.CMD.SELECT_SETTING, mspMsgs.encodeSelectSetting("rate", slot - 1))
-            profileFlow = "selecting"
+            profileFlow = "confirming"
         end
     end
+end
+
+-- Handles the Switch/Cancel buttons on the confirmation overlay opened by
+-- handleProfileTouch above. Captures EVERY tap anywhere on screen while open
+-- (not just on its own buttons) so the overlay can't be tapped "through" to
+-- whatever page is underneath it -- a stray tap just gets swallowed, leaving
+-- the overlay open, rather than silently also focusing a row on the page.
+local function handleProfileConfirmTouch(touchState)
+    if profileFlow ~= "confirming" then
+        return
+    end
+    if tapConsumed or not touchState then
+        return
+    end
+    tapConsumed = true
+    local tx, ty = touchState.x, touchState.y
+    if ty >= CONFIRM_BTN_Y and ty < CONFIRM_BTN_Y + CONFIRM_BTN_H then
+        if tx >= CONFIRM_YES_X and tx < CONFIRM_YES_X + CONFIRM_YES_W then
+            app.session:request(mspMsgs.CMD.SELECT_SETTING, mspMsgs.encodeSelectSetting(pendingProfileType, pendingSlot - 1))
+            profileFlow = "selecting"
+        elseif tx >= CONFIRM_NO_X and tx < CONFIRM_NO_X + CONFIRM_NO_W then
+            profileFlow = "idle"
+            pendingProfileType, pendingSlot = nil, nil
+        end
+    end
+end
+
+local function profileConfirmLabel()
+    local typeLabel = (pendingProfileType == "pid") and "PID" or "Rate"
+    return "Switch to " .. typeLabel .. " profile " .. tostring(pendingSlot) .. " now?"
+end
+
+local function drawProfileConfirm()
+    lcd.drawFilledRectangle(20, CONFIRM_Y, LCD_W - 40, CONFIRM_H, COLOR_BLACK)
+    lcd.drawRectangle(20, CONFIRM_Y, LCD_W - 40, CONFIRM_H, COLOR_ORANGE)
+    lcd.drawText(36, CONFIRM_TITLE_Y, profileConfirmLabel(), COLOR_WHITE)
+    lcd.drawText(36, CONFIRM_LINE1_Y, "This takes effect on the flight controller", COLOR_GREY)
+    lcd.drawText(36, CONFIRM_LINE2_Y, "immediately, not just in this tool.", COLOR_GREY)
+    lcd.drawFilledRectangle(CONFIRM_YES_X, CONFIRM_BTN_Y, CONFIRM_YES_W, CONFIRM_BTN_H, COLOR_GREEN)
+    lcd.drawText(CONFIRM_YES_X + 46, CONFIRM_BTN_Y + 8, "Switch", COLOR_WHITE)
+    lcd.drawFilledRectangle(CONFIRM_NO_X, CONFIRM_BTN_Y, CONFIRM_NO_W, CONFIRM_BTN_H, COLOR_GREY)
+    lcd.drawText(CONFIRM_NO_X + 50, CONFIRM_BTN_Y + 8, "Cancel", COLOR_WHITE)
 end
 
 local function pumpProfileFlow(nowMs)
@@ -746,6 +812,13 @@ local function handleTabTouch(touchState, armed)
     if armed then
         return
     end
+    -- Block tab switching while the profile-switch confirmation overlay is
+    -- open (or its MSP request is in flight): switching tabs out from under
+    -- an open "Switch to profile N now?" prompt would be confusing, and the
+    -- overlay isn't tab-specific anyway.
+    if profileFlow ~= "idle" then
+        return
+    end
     local w = math.floor(LCD_W / #pageNames)
     for i = 1, #pageNames do
         local x = (i - 1) * w
@@ -818,14 +891,6 @@ local function runBody(event, touchState)
     if armed then
         lcd.drawFilledRectangle(0, 0, LCD_W, 20, COLOR_RED)
         lcd.drawText(10, 4, "ARMED -- read only", COLOR_WHITE)
-        -- DIAGNOSTIC: shows the exact flight-mode text this FC is sending, to
-        -- debug the arm-lock fail-safe showing armed when the craft is
-        -- genuinely disarmed. Shortened to just the raw text (dropping
-        -- stale/armed/n, already confirmed working) since the combined
-        -- string was running off the right edge of the screen before the
-        -- actual value was visible. Remove once confirmed working.
-        local _, _, lastRawText = app.arm:debugInfo()
-        lcd.drawText(150, 4, "FM='" .. tostring(lastRawText) .. "'", COLOR_WHITE)
     end
 
     -- Touch dispatch, highest priority first. Each handler claims the tap if it
@@ -833,12 +898,16 @@ local function runBody(event, touchState)
     tapConsumed = false
     handleTabTouch(touchState, armed)
     handleProfileTouch(touchState, armed)
+    handleProfileConfirmTouch(touchState)
     handleFooterTouch(touchState, armed)
 
     drawTabBar(armed)
     drawProfileRow(armed)
 
-    if pumpSaveFlow(nowMs) then
+    if profileFlow == "confirming" then
+        -- Overlay is up; don't touch the page underneath at all this tick.
+        drawProfileConfirm()
+    elseif pumpSaveFlow(nowMs) then
         -- save in progress; skip page update/event this tick
     elseif pumpProfileFlow(nowMs) then
         -- profile-slot switch in progress; skip page update/event this tick
