@@ -386,7 +386,7 @@ local pendingSlot = nil
 -- handleFooterTouch's Save-tap gate below.
 local profileSwitchPending = false
 
-local saveFlow = "idle" -- idle | sending | waitSet | eeprom
+local saveFlow = "idle" -- idle | confirming | sending | waitSet | eeprom
 local saveQueue = nil
 local saveIndex = 0
 local saveWritten = nil -- keys whose SET was acknowledged, pending EEPROM confirm
@@ -528,7 +528,10 @@ local function drawFooter(armed, nowMs)
 
     if saveError then
         lcd.drawText(220, FOOTER_Y + 12, saveError, COLOR_RED)
-    elseif saveFlow ~= "idle" then
+    elseif saveFlow ~= "idle" and saveFlow ~= "confirming" then
+        -- "confirming" deliberately excluded: nothing has been sent to the FC
+        -- yet at that point (see drawSaveConfirm/handleSaveConfirmTouch), so
+        -- "Saving..." here would be inaccurate while that overlay is up.
         lcd.drawText(220, FOOTER_Y + 12, "Saving...", COLOR_WHITE)
     elseif app.state:isAnyDirty() and profileSwitchPending then
         lcd.drawText(220, FOOTER_Y + 12, "* unsaved changes + profile switch", COLOR_ORANGE)
@@ -563,9 +566,13 @@ local function handleFooterTouch(touchState, armed)
     if tx >= BTN_SAVE_X and tx < BTN_SAVE_X + BTN_SAVE_W then
         -- Don't start a save on top of an in-flight page load: the msp session
         -- handles one request at a time and request() throws while pending.
+        -- Writing to the FC and committing to EEPROM is irreversible from
+        -- this tool once it happens, so a tap here only opens the confirm
+        -- overlay (handleSaveConfirmTouch/drawSaveConfirm below) -- the
+        -- actual beginSaveFlow() only runs once that's confirmed.
         if saveFlow == "idle" and profileFlow == "idle"
             and not app.session:isPending() and (app.state:isAnyDirty() or profileSwitchPending) then
-            beginSaveFlow()
+            saveFlow = "confirming"
         end
     elseif tx >= BTN_CANCEL_X and tx < BTN_CANCEL_X + BTN_CANCEL_W then
         if saveFlow == "idle" and profileFlow == "idle" then
@@ -715,46 +722,98 @@ local function handleProfileTouch(touchState, armed)
     end
 end
 
--- Handles the Switch/Cancel buttons on the confirmation overlay opened by
--- handleProfileTouch above. Captures EVERY tap anywhere on screen while open
--- (not just on its own buttons) so the overlay can't be tapped "through" to
--- whatever page is underneath it -- a stray tap just gets swallowed, leaving
--- the overlay open, rather than silently also focusing a row on the page.
-local function handleProfileConfirmTouch(touchState)
-    if profileFlow ~= "confirming" then
-        return
-    end
+-- Shared by both confirmation overlays below (profile-switch and save) --
+-- they're mutually exclusive (each only opens from the other flow's "idle"
+-- state, see their own guards), so one geometry/one generic draw+touch pair
+-- covers both instead of duplicating the layout twice.
+--
+-- Captures EVERY tap anywhere on screen while an overlay is open (not just on
+-- its own buttons), so it can't be tapped "through" to whatever page is
+-- underneath -- a stray tap just gets swallowed, leaving the overlay open,
+-- rather than silently also focusing a row on the page.
+local function confirmOverlayTap(touchState)
     if tapConsumed or not touchState then
-        return
+        return nil
     end
     tapConsumed = true
     local tx, ty = touchState.x, touchState.y
     if ty >= CONFIRM_BTN_Y and ty < CONFIRM_BTN_Y + CONFIRM_BTN_H then
         if tx >= CONFIRM_YES_X and tx < CONFIRM_YES_X + CONFIRM_YES_W then
-            app.session:request(mspMsgs.CMD.SELECT_SETTING, mspMsgs.encodeSelectSetting(pendingProfileType, pendingSlot - 1))
-            profileFlow = "selecting"
+            return "yes"
         elseif tx >= CONFIRM_NO_X and tx < CONFIRM_NO_X + CONFIRM_NO_W then
-            profileFlow = "idle"
-            pendingProfileType, pendingSlot = nil, nil
+            return "no"
         end
+    end
+    return "none" -- tap landed somewhere in the overlay but not on a button
+end
+
+local function drawConfirmOverlay(title, line1, line2, yesLabel, yesLabelX, noLabel, noLabelX)
+    lcd.drawFilledRectangle(20, CONFIRM_Y, LCD_W - 40, CONFIRM_H, COLOR_BLACK)
+    lcd.drawRectangle(20, CONFIRM_Y, LCD_W - 40, CONFIRM_H, COLOR_ORANGE)
+    lcd.drawText(36, CONFIRM_TITLE_Y, title, COLOR_WHITE)
+    lcd.drawText(36, CONFIRM_LINE1_Y, line1, COLOR_GREY)
+    lcd.drawText(36, CONFIRM_LINE2_Y, line2, COLOR_GREY)
+    lcd.drawFilledRectangle(CONFIRM_YES_X, CONFIRM_BTN_Y, CONFIRM_YES_W, CONFIRM_BTN_H, COLOR_GREEN)
+    lcd.drawText(CONFIRM_YES_X + yesLabelX, CONFIRM_BTN_Y + 8, yesLabel, COLOR_WHITE)
+    lcd.drawFilledRectangle(CONFIRM_NO_X, CONFIRM_BTN_Y, CONFIRM_NO_W, CONFIRM_BTN_H, COLOR_GREY)
+    lcd.drawText(CONFIRM_NO_X + noLabelX, CONFIRM_BTN_Y + 8, noLabel, COLOR_WHITE)
+end
+
+local function handleProfileConfirmTouch(touchState)
+    if profileFlow ~= "confirming" then
+        return
+    end
+    local hit = confirmOverlayTap(touchState)
+    if hit == "yes" then
+        app.session:request(mspMsgs.CMD.SELECT_SETTING, mspMsgs.encodeSelectSetting(pendingProfileType, pendingSlot - 1))
+        profileFlow = "selecting"
+    elseif hit == "no" then
+        profileFlow = "idle"
+        pendingProfileType, pendingSlot = nil, nil
     end
 end
 
-local function profileConfirmLabel()
+local function drawProfileConfirm()
     local typeLabel = (pendingProfileType == "pid") and "PID" or "Rate"
-    return "Switch to " .. typeLabel .. " profile " .. tostring(pendingSlot) .. " now?"
+    local title = "Switch to " .. typeLabel .. " profile " .. tostring(pendingSlot) .. " now?"
+    drawConfirmOverlay(title,
+        "This takes effect on the flight controller",
+        "immediately, not just in this tool.",
+        "Switch", 46, "Cancel", 50)
 end
 
-local function drawProfileConfirm()
-    lcd.drawFilledRectangle(20, CONFIRM_Y, LCD_W - 40, CONFIRM_H, COLOR_BLACK)
-    lcd.drawRectangle(20, CONFIRM_Y, LCD_W - 40, CONFIRM_H, COLOR_ORANGE)
-    lcd.drawText(36, CONFIRM_TITLE_Y, profileConfirmLabel(), COLOR_WHITE)
-    lcd.drawText(36, CONFIRM_LINE1_Y, "This takes effect on the flight controller", COLOR_GREY)
-    lcd.drawText(36, CONFIRM_LINE2_Y, "immediately, not just in this tool.", COLOR_GREY)
-    lcd.drawFilledRectangle(CONFIRM_YES_X, CONFIRM_BTN_Y, CONFIRM_YES_W, CONFIRM_BTN_H, COLOR_GREEN)
-    lcd.drawText(CONFIRM_YES_X + 46, CONFIRM_BTN_Y + 8, "Switch", COLOR_WHITE)
-    lcd.drawFilledRectangle(CONFIRM_NO_X, CONFIRM_BTN_Y, CONFIRM_NO_W, CONFIRM_BTN_H, COLOR_GREY)
-    lcd.drawText(CONFIRM_NO_X + 50, CONFIRM_BTN_Y + 8, "Cancel", COLOR_WHITE)
+-- Opens from the footer's Save button (see handleFooterTouch) rather than
+-- saving immediately: an EEPROM write is the one action in this whole tool
+-- that can't be undone from within it, so it gets one extra confirming tap.
+local function handleSaveConfirmTouch(touchState)
+    if saveFlow ~= "confirming" then
+        return
+    end
+    local hit = confirmOverlayTap(touchState)
+    if hit == "yes" then
+        beginSaveFlow()
+    elseif hit == "no" then
+        saveFlow = "idle"
+    end
+end
+
+local function drawSaveConfirm()
+    local dirty = app.state:isAnyDirty()
+    local title, line1, line2
+    if dirty and profileSwitchPending then
+        title = "Save changes and profile switch?"
+        line1 = "Writes settings to the flight controller"
+        line2 = "and makes the profile switch permanent."
+    elseif dirty then
+        title = "Save changes to the flight controller?"
+        line1 = "Writes settings now -- this can't be undone"
+        line2 = "from this tool once it's done."
+    else
+        title = "Keep this profile switch after reboot?"
+        line1 = "The switch already took effect -- this just"
+        line2 = "makes it survive a power cycle."
+    end
+    drawConfirmOverlay(title, line1, line2, "Save", 54, "Cancel", 50)
 end
 
 local function pumpProfileFlow(nowMs)
@@ -839,8 +898,10 @@ local function handleTabTouch(touchState, armed)
     -- Block tab switching while the profile-switch confirmation overlay is
     -- open (or its MSP request is in flight): switching tabs out from under
     -- an open "Switch to profile N now?" prompt would be confusing, and the
-    -- overlay isn't tab-specific anyway.
-    if profileFlow ~= "idle" then
+    -- overlay isn't tab-specific anyway. Same reasoning for the save-confirm
+    -- overlay (saveFlow's "sending"/"waitSet"/"eeprom" states are left
+    -- switchable, as before -- only the confirmation itself is blocked).
+    if profileFlow ~= "idle" or saveFlow == "confirming" then
         return
     end
     local w = math.floor(LCD_W / #pageNames)
@@ -923,6 +984,19 @@ local function runBody(event, touchState)
     if armed then
         lcd.drawFilledRectangle(0, 0, LCD_W, 20, COLOR_RED)
         lcd.drawText(10, 4, "ARMED -- read only", COLOR_WHITE)
+        -- Neither confirmation overlay has sent its MSP request yet (that
+        -- only happens once "Switch"/"Save" is actually tapped), so arming
+        -- mid-overlay can just drop back to idle instead of needing its own
+        -- failSave-style abort path. pumpSaveFlow below still separately
+        -- handles aborting an ALREADY-in-flight save (sending/waitSet/eeprom)
+        -- if the pilot arms mid-save, which is a different case.
+        if profileFlow == "confirming" then
+            profileFlow = "idle"
+            pendingProfileType, pendingSlot = nil, nil
+        end
+        if saveFlow == "confirming" then
+            saveFlow = "idle"
+        end
     end
 
     -- Touch dispatch, highest priority first. Each handler claims the tap if it
@@ -931,6 +1005,7 @@ local function runBody(event, touchState)
     handleTabTouch(touchState, armed)
     handleProfileTouch(touchState, armed)
     handleProfileConfirmTouch(touchState)
+    handleSaveConfirmTouch(touchState)
     handleFooterTouch(touchState, armed)
 
     drawTabBar(armed)
@@ -939,6 +1014,8 @@ local function runBody(event, touchState)
     if profileFlow == "confirming" then
         -- Overlay is up; don't touch the page underneath at all this tick.
         drawProfileConfirm()
+    elseif saveFlow == "confirming" then
+        drawSaveConfirm()
     elseif pumpSaveFlow(nowMs) then
         -- save in progress; skip page update/event this tick
     elseif pumpProfileFlow(nowMs) then
