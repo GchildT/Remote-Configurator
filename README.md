@@ -191,7 +191,10 @@ project maintainer as of this writing.
 A subsequent round of UX changes -- confirmation overlays before a profile
 switch or a Save actually reaches the FC, friendlier save/connection error
 text, an editing hint in the footer, and a clearer Hover Point
-not-available message -- is currently undergoing its own bench-test pass.
+not-available message -- has since been bench-tested end to end and confirmed
+working as expected (the Hover Point message is the one exception: it only
+shows on firmware older than MSP API 1.47, and no such flight controller was
+available to exercise it).
 
 The tool is now being shared with a wider group of pilots for further
 feedback -- if you hit something odd, please open an issue with what
